@@ -1,0 +1,29 @@
+{
+  "name": "app_arcano",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build --turbopack",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@types/mongoose": "^5.11.96",
+    "html-pdf": "^3.0.1",
+    "mongoose": "^8.19.1",
+    "next": "15.5.4",
+    "openai": "^6.3.0",
+    "puppeteer": "^24.24.0",
+    "react-quill": "^2.0.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
