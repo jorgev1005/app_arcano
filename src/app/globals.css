@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+@theme {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+}
+
+/* Custom Utilities if needed */

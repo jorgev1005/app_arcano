@@ -1,8 +1,8 @@
+import { NextRequest } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import File from '@/models/File';
-import { compile } from 'html-pdf';
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   await dbConnect();
 
   const { projectId } = await request.json();
@@ -17,14 +17,22 @@ export async function POST(request: Request) {
 
   html += '</body></html>';
 
+  const htmlPdfModule = await import('html-pdf');
+  const htmlPdf = htmlPdfModule.default ?? htmlPdfModule;
+
   const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-    compile(html, (err, buffer) => {
-      if (err) reject(err);
-      else resolve(buffer);
+    htmlPdf.create(html).toBuffer((err: Error | null, buffer: Buffer) => {
+      if (err || !buffer) {
+        reject(err ?? new Error('No se pudo generar el PDF'));
+      } else {
+        resolve(buffer);
+      }
     });
   });
 
-  return new Response(pdfBuffer, {
+  const pdfUint8Array = new Uint8Array(pdfBuffer);
+
+  return new Response(pdfUint8Array, {
     headers: {
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'attachment; filename="proyecto.pdf"',

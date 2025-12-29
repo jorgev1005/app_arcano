@@ -1,0 +1,555 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
+import Binder from '@/components/Binder';
+import Corkboard from '@/components/Corkboard';
+import Outliner from '@/components/Outliner';
+import Inspector from '@/components/Inspector';
+import ProjectSettings from '@/components/ProjectSettings';
+import ProjectPreview from '@/components/ProjectPreview'; // New Import
+import FeedbackModal from '@/components/FeedbackModal'; // New Import
+import TimelineView from '@/components/TimelineView'; // New Import
+import GoalWidget from '@/components/GoalWidget'; // New Import
+import WelcomeScreen from '@/components/WelcomeScreen';
+import GraphView from '@/components/GraphView';
+import PacingGraph from '@/components/PacingGraph';
+import { Project, FileNode } from '@/types/models';
+import { Layout, Grid, List, LogOut, Menu, X, Settings, Network, BarChart3, HelpCircle, Maximize2, Minimize2, CalendarClock } from 'lucide-react';
+import { signOut, useSession } from 'next-auth/react';
+
+const Editor = dynamic(() => import('@/components/Editor'), { ssr: false });
+
+export default function Dashboard() {
+    const { data: session } = useSession();
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [currentProject, setCurrentProject] = useState<Project | null>(null);
+    const [files, setFiles] = useState<FileNode[]>([]);
+    const [currentFile, setCurrentFile] = useState<FileNode | null>(null);
+    const [selectedFolder, setSelectedFolder] = useState<string | null>(null); // Lifted state
+    const [view, setView] = useState<'editor' | 'corkboard' | 'outliner' | 'graph' | 'analytics' | 'timeline'>('editor');
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
+    const [showPreview, setShowPreview] = useState(false); // New State
+    const [isFeedbackOpen, setIsFeedbackOpen] = useState(false); // New State
+    const [isZenMode, setIsZenMode] = useState(false); // Zen Mode State
+
+    useEffect(() => {
+        fetchProjects();
+
+        // Auto-open sidebar on mobile/tablet for better accessibility
+        const isMobile = window.innerWidth < 1024;
+        if (isMobile) {
+            setIsSidebarOpen(true);
+        }
+    }, []);
+
+    const fetchProjects = async () => {
+        try {
+            const res = await fetch('/api/projects');
+            if (!res.ok) throw new Error('Error al cargar proyectos');
+            const data: { projects: Project[] } = await res.json();
+            setProjects(data.projects);
+            // Don't auto-select. Let user choose from Welcome Screen.
+            // if (data.projects.length > 0 && !currentProject) {
+            //     selectProject(data.projects[0]);
+            // }
+        } catch (error) {
+            console.error('Error fetching projects:', error);
+        }
+    };
+
+    const createProject = async (title: string, description?: string, settings?: any, coverImage?: string) => {
+        try {
+            const res = await fetch('/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, description: description || '', settings, coverImage }),
+            });
+
+            if (!res.ok) throw new Error('Error al crear proyecto');
+
+            const data = await res.json();
+            setProjects([...projects, data.project]);
+            selectProject(data.project);
+        } catch (error) {
+            console.error('Error creating project:', error);
+        }
+    };
+
+    const updateProject = async (projectId: string, updates: any) => {
+        // Optimistic Update
+        if (currentProject?._id === projectId) {
+            setCurrentProject(prev => prev ? { ...prev, ...updates } : null);
+        }
+        setProjects(prev => prev.map(p => p._id === projectId ? { ...p, ...updates } : p));
+
+        try {
+            const res = await fetch(`/api/projects/${projectId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates),
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                console.error("Server Error Details:", errorData);
+                throw new Error(errorData.details || 'Error al actualizar proyecto');
+            }
+
+            const data = await res.json();
+
+            // Confirm/Reconcile with server data (optional, protects against sync drift)
+            if (currentProject?._id === projectId) {
+                setCurrentProject(data.project);
+            }
+            setProjects(prev => prev.map(p => p._id === projectId ? data.project : p));
+
+        } catch (error) {
+            console.error('Error updating project:', error);
+            alert('Error al actualizar proyecto');
+            // Revert would be nice here but complex. For MVP we alert.
+        }
+    };
+
+    const deleteProject = async (projectId: string) => {
+        try {
+            const res = await fetch(`/api/projects/${projectId}`, {
+                method: 'DELETE',
+            });
+
+            if (!res.ok) throw new Error('Error al eliminar proyecto');
+
+            setProjects(prev => prev.filter(p => p._id !== projectId));
+            if (currentProject?._id === projectId) {
+                setCurrentProject(null);
+            }
+        } catch (error) {
+            console.error('Error deleting project:', error);
+            alert('Error al eliminar el proyecto');
+        }
+    };
+
+    const selectProject = async (project: Project) => {
+        setCurrentProject(project);
+        const res = await fetch(`/api/files?projectId=${project._id}`);
+        if (!res.ok) {
+            console.error('Error al cargar archivos del proyecto');
+            return;
+        }
+        const data: { files: FileNode[] } = await res.json();
+
+        // Check/Create "Extras" folder (System Folder)
+        const extrasFolder = data.files.find(f => f.isSystem);
+        if (!extrasFolder) {
+            // Auto-create
+            try {
+                const createRes = await fetch('/api/files', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: 'Extras',
+                        projectId: project._id,
+                        type: 'folder',
+                        parent: null,
+                        isSystem: true // Protected
+                    }),
+                });
+                if (createRes.ok) {
+                    const newData = await createRes.json();
+                    data.files.push(newData.file);
+                }
+            } catch (e) { console.error("Error creating Extras folder", e); }
+        }
+
+        setFiles(data.files);
+    };
+
+
+
+    const createFile = async (title: string, type: string = 'file', parentId: string | null = null) => {
+        if (!currentProject) {
+            alert('Primero selecciona un proyecto de la lista.');
+            return;
+        }
+        try {
+            const res = await fetch('/api/files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title,
+                    projectId: currentProject._id,
+                    type,
+                    parent: parentId
+                }),
+            });
+
+            if (!res.ok) throw new Error('Error al crear archivo');
+
+            const data = await res.json();
+            const newFiles = [...files, data.file];
+            setFiles(newFiles);
+
+            // Only select if it's a file, not a folder
+            if (type === 'file') {
+                setCurrentFile(data.file);
+                setView('editor');
+            }
+        } catch (error) {
+            console.error('Error creating file:', error);
+            alert('Error al crear el elemento');
+        }
+    };
+
+    const updateFile = async (fileId: string, updates: any) => {
+        console.log('UpdateFile called for:', fileId, 'Updates:', updates);
+        try {
+            const res = await fetch(`/api/files/${fileId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates),
+            });
+
+            if (!res.ok) throw new Error('Error al actualizar archivo');
+
+            const data = await res.json();
+
+            // Update local state
+            setFiles(prevFiles => prevFiles.map(f => f._id === fileId ? { ...f, ...updates } : f));
+
+            // Update current file if it's the one being modified
+            if (currentFile?._id === fileId) {
+                setCurrentFile(prev => prev ? { ...prev, ...updates } : null);
+            }
+        } catch (error) {
+            console.error('Error updating file:', error);
+            alert('Error al actualizar el elemento');
+        }
+    };
+
+    const selectFile = (file: FileNode) => {
+        setCurrentFile(file);
+        setView('editor');
+    };
+
+    const onReorder = async (newFiles: FileNode[]) => {
+        setFiles(newFiles);
+        try {
+            await fetch('/api/files', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newFiles),
+            });
+        } catch (error) {
+            console.error('Error saving order:', error);
+        }
+    };
+
+    const deleteFile = async (fileId: string) => {
+        try {
+            const res = await fetch(`/api/files/${fileId}`, {
+                method: 'DELETE',
+            });
+
+            if (!res.ok) throw new Error('Error al eliminar');
+
+            setFiles(prev => prev.filter(f => f._id !== fileId));
+            if (currentFile?._id === fileId) {
+                setCurrentFile(null);
+                setView('editor');
+            }
+        } catch (error) {
+            console.error('Error deleting file:', error);
+            alert('Error al eliminar archivo');
+        }
+    };
+
+    const handleFileSave = (updatedFile: FileNode) => {
+        setFiles(prevFiles => prevFiles.map(f => f._id === updatedFile._id ? updatedFile : f));
+        if (currentFile?._id === updatedFile._id) {
+            setCurrentFile(updatedFile);
+        }
+    };
+
+    if (!currentProject && projects.length === 0) {
+        return (
+            <WelcomeScreen
+                projects={projects}
+                onSelectProject={selectProject}
+                onCreateProject={createProject}
+                onDeleteProject={deleteProject}
+            />
+        );
+    }
+
+    // Also show welcome if projects exist but none selected? 
+    // Usually fetchProjects selects default. If explicit close, maybe show welcome?
+    // For now, if no currentProject, show welcome (it handles list).
+    if (!currentProject) {
+        return (
+            <WelcomeScreen
+                projects={projects}
+                onSelectProject={selectProject}
+                onCreateProject={createProject}
+                onDeleteProject={deleteProject}
+                onUpdateProject={updateProject}
+                user={session?.user}
+            />
+        );
+    }
+
+    return (
+        <div className="flex bg-neutral-900 min-h-screen">
+            {/* Sidebar Toggle for Mobile */}
+            <button
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-neutral-800 rounded text-white"
+            >
+                {isSidebarOpen ? <X /> : <Menu />}
+            </button>
+
+            {/* Sidebar Container */}
+            {!isZenMode && (
+                <div className={`
+                    fixed inset-y-0 left-0 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+                    lg:relative lg:translate-x-0 transition-transform duration-200 ease-in-out
+                    w-64 border-r border-white/10 z-40 bg-neutral-900
+                `}>
+                    {/* Binder Panel */}
+                    <Binder
+                        projects={projects}
+                        selectProject={(p) => { selectProject(p); setIsSidebarOpen(false); }}
+                        createProject={createProject}
+                        files={files}
+                        selectFile={(f) => { selectFile(f); setIsSidebarOpen(false); }}
+                        createFile={createFile}
+                        updateFile={updateFile}
+                        onReorder={(reorderedSubset) => {
+                            // Merge subset updates (e.g. from Renumbering) into main file list
+                            const updatedSubset = reorderedSubset.map((f, idx) => ({ ...f, order: idx }));
+                            const newFiles = files.map(f => {
+                                const updated = updatedSubset.find(u => u._id === f._id);
+                                return updated || f;
+                            });
+                            onReorder(newFiles);
+                        }}
+                        currentProject={currentProject}
+                        deleteFile={deleteFile}
+                        onOpenPreview={() => setShowPreview(true)}
+                        selectedFolder={selectedFolder}
+                        setSelectedFolder={setSelectedFolder}
+                        selectedFileId={currentFile?._id}
+                    />
+                </div>
+            )}
+
+            {/* Main Content */}
+            <div className="flex-1 flex flex-col relative z-0">
+                {/* ... Header ... */}
+                {!isZenMode && (
+                    <div className="h-14 bg-white/5 backdrop-blur-md border-b border-white/10 flex items-center justify-between px-4">
+                        {/* ... (Header content unchanged) ... */}
+                        <div className="flex gap-2 items-center">
+                            <button
+                                onClick={() => setIsSidebarOpen(true)}
+                                className="p-2 -ml-2 mr-2 md:hidden hover:bg-white/10 rounded-md text-gray-400"
+                            >
+                                <Menu size={20} />
+                            </button>
+                        </div>
+
+                        <div className="flex gap-2 bg-black/20 p-1 rounded-lg">
+                            <button
+                                onClick={() => setView('editor')}
+                                className={`p-2 rounded-md transition-all ${view === 'editor' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                <Layout size={18} />
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setView('corkboard');
+                                    // If no folder selected, maybe default to root? Yes.
+                                }}
+                                className={`p-2 rounded-md transition-all ${view === 'corkboard' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                <Grid size={18} />
+                            </button>
+                            <button
+                                onClick={() => setView('outliner')}
+                                className={`p-2 rounded-md transition-all ${view === 'outliner' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                title="Esquema"
+                            >
+                                <List size={18} />
+                            </button>
+                            <button
+                                onClick={() => setView('graph')}
+                                className={`p-2 rounded-md transition-all ${view === 'graph' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                title="Vista Gráfica (Nodos)"
+                            >
+                                <Network size={18} />
+                            </button>
+                            <button
+                                onClick={() => setView('analytics')}
+                                className={`p-2 rounded-md transition-all ${view === 'analytics' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                title="Análisis Narrativo"
+                            >
+                                <BarChart3 size={18} />
+                            </button>
+                            <button
+                                onClick={() => setView('timeline')}
+                                className={`p-2 rounded-md transition-all ${view === 'timeline' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                title="Línea de Tiempo"
+                            >
+                                <CalendarClock size={18} />
+                            </button>
+                        </div>
+                        {/* ... Right side header ... */}
+                        <div className="flex items-center gap-4">
+                            {/* Add Goal Widget Here if project exists */}
+                            {currentProject && <GoalWidget project={currentProject} />}
+
+                            <div className="text-xs font-mono text-gray-500 bg-black/20 px-2 py-1 rounded border border-white/5" title="Total del Proyecto">
+                                {files.reduce((acc, f) => acc + (f.wordCount || 0), 0).toLocaleString()} palabras
+                            </div>
+                            <div className="text-sm font-medium text-gray-400">
+                                {currentProject?.title} / {currentFile?.title || (selectedFolder ? files.find(f => f._id === selectedFolder)?.title : 'Raíz')}
+                            </div>
+                            <button
+                                onClick={() => setIsFeedbackOpen(true)}
+                                className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                                title="Enviar Comentarios / Reportar Error"
+                            >
+                                <HelpCircle size={18} />
+                            </button>
+                            <div className="h-6 w-px bg-white/10 mx-2" />
+                            <button
+                                onClick={() => setIsZenMode(true)}
+                                className="p-2 rounded-md text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-colors"
+                                title="Modo Zen (Pantalla Completa)"
+                            >
+                                <Maximize2 size={18} />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Workspace */}
+                <div className="flex-1 overflow-hidden relative">
+                    {/* Zen Mode Exit Button */}
+                    {isZenMode && (
+                        <button
+                            onClick={() => setIsZenMode(false)}
+                            className="absolute top-4 right-4 z-50 p-2 bg-neutral-800/80 backdrop-blur text-gray-400 hover:text-white rounded-full hover:bg-neutral-700 transition-all shadow-lg border border-white/5 group"
+                            title="Salir del Modo Zen"
+                        >
+                            <Minimize2 size={20} />
+                            <span className="max-w-0 overflow-hidden group-hover:max-w-xs group-hover:ml-2 transition-all duration-300 ease-in-out whitespace-nowrap text-sm">Salir Modo Zen</span>
+                        </button>
+                    )}
+                    {view === 'editor' && (
+                        currentFile ? (
+                            <Editor
+                                file={currentFile}
+                                onSave={handleFileSave}
+                                variables={currentProject?.variables}
+                            />
+                        ) : (
+                            <div className="flex bg-neutral-900 flex-col items-center justify-center h-full text-gray-400">
+                                <p className="mb-4 text-lg">Selecciona un archivo para empezar a escribir</p>
+                                <p className="text-sm opacity-60">Usa el botón + del Binder para crear uno nuevo</p>
+                            </div>
+                        )
+                    )}
+                    {view === 'corkboard' && (
+                        <Corkboard
+                            files={files.filter(f => f.parent === selectedFolder).sort((a, b) => (a.order || 0) - (b.order || 0))}
+                            currentFolder={selectedFolder ? files.find(f => f._id === selectedFolder) || null : null}
+                            onBack={() => {
+                                if (selectedFolder) {
+                                    const current = files.find(f => f._id === selectedFolder);
+                                    setSelectedFolder(current?.parent || null);
+                                }
+                            }}
+                            onSelect={(file: FileNode) => {
+                                if (file.type === 'folder') {
+                                    setSelectedFolder(file._id);
+                                } else {
+                                    selectFile(file);
+                                }
+                            }}
+                            onReorder={(reorderedSubset) => {
+                                // We need to merge the reordered subset back into the main files list
+                                // The new subset has updated 'order' fields? No, onReorder usually returns the array in new order.
+                                // We need to map their index to 'order' property.
+                                const updatedSubset = reorderedSubset.map((f, idx) => ({ ...f, order: idx }));
+                                const newFiles = files.map(f => {
+                                    const updated = updatedSubset.find(u => u._id === f._id);
+                                    return updated || f;
+                                });
+                                onReorder(newFiles);
+                            }}
+                        />
+                    )}
+                    {view === 'outliner' && <Outliner files={files} onSelect={selectFile} />}
+                    {view === 'graph' && (
+                        <GraphView
+                            files={files}
+                            onSelect={selectFile}
+                            project={currentProject}
+                            onSaveGraph={(data) => {
+                                if (currentProject) updateProject(currentProject._id, { graphData: data });
+                            }}
+                        />
+                    )}
+                    {view === 'analytics' && (
+                        <div className="h-full p-6">
+                            <PacingGraph
+                                files={files}
+                                projectGenre={currentProject?.settings?.genre}
+                            />
+                        </div>
+                    )}
+                    {view === 'timeline' && (
+                        <TimelineView
+                            files={files}
+                            onSelect={selectFile}
+                        />
+                    )}
+                </div>
+            </div>
+
+            {/* Inspector */}
+            {!isZenMode && (
+                <div className="hidden lg:block w-72 bg-white/5 backdrop-blur-xl border-l border-white/10">
+                    <Inspector
+                        file={currentFile}
+                        onSave={handleFileSave}
+                        allFiles={files}
+                        projectSettings={currentProject?.settings}
+                    />
+                </div>
+            )}
+
+            {showSettings && currentProject && (
+                <ProjectSettings
+                    project={currentProject}
+                    onClose={() => setShowSettings(false)}
+                    onUpdate={updateProject}
+                />
+            )}
+
+            {showPreview && currentProject && (
+                <ProjectPreview
+                    files={files}
+                    project={currentProject}
+                    onClose={() => setShowPreview(false)}
+                />
+            )}
+
+            <FeedbackModal
+                isOpen={isFeedbackOpen}
+                onClose={() => setIsFeedbackOpen(false)}
+            />
+        </div>
+    );
+}
