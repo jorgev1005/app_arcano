@@ -98,19 +98,39 @@ export default function Dashboard() {
             }
 
             const data = await res.json();
-
-            // Confirm/Reconcile with server data (optional, protects against sync drift)
-            if (currentProject?._id === projectId) {
-                setCurrentProject(data.project);
-            }
-            setProjects(prev => prev.map(p => p._id === projectId ? data.project : p));
-
+            setCurrentProject(data.project); // Update current project fully
         } catch (error) {
             console.error('Error updating project:', error);
-            alert('Error al actualizar proyecto');
-            // Revert would be nice here but complex. For MVP we alert.
         }
     };
+
+    const handleStatsUpdate = (newTotal: number) => {
+        if (!currentProject) return;
+
+        const today = new Date().toISOString().split('T')[0];
+
+        // Update local state for immediate UI feedback
+        setProjects(prev => prev.map(p => {
+            if (p._id === currentProject._id) {
+                const newStats = { ...(p.stats || {}) };
+                // Ensure dailyProgress is treated correctly as Record<string, number> in frontend JSON
+                const newDaily = { ...(newStats.dailyProgress || {}), [today]: newTotal };
+
+                return { ...p, stats: { ...newStats, dailyProgress: newDaily } };
+            }
+            return p;
+        }));
+
+        // Also update currentProject state
+        setCurrentProject(prev => {
+            if (!prev) return null;
+            const newStats = { ...(prev.stats || {}) };
+            const newDaily = { ...(newStats.dailyProgress || {}), [today]: newTotal };
+            return { ...prev, stats: { ...newStats, dailyProgress: newDaily } };
+        });
+    };
+
+
 
     const deleteProject = async (projectId: string) => {
         try {
@@ -452,6 +472,8 @@ export default function Dashboard() {
                                 file={currentFile}
                                 onSave={handleFileSave}
                                 variables={currentProject?.variables}
+                                projectId={currentProject?._id}
+                                onStatsUpdate={handleStatsUpdate}
                             />
                         ) : (
                             <div className="flex bg-neutral-900 flex-col items-center justify-center h-full text-gray-400">

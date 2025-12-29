@@ -10,9 +10,10 @@ interface EditorProps {
   onSave?: (file: any) => void;
   variables?: { key: string; value: string }[];
   projectId?: string; // New Prop
+  onStatsUpdate?: (newTotal: number) => void;
 }
 
-export default function Editor({ file, onSave, variables = [], projectId }: EditorProps) {
+export default function Editor({ file, onSave, variables = [], projectId, onStatsUpdate }: EditorProps) {
   const [content, setContent] = useState(file?.content || '');
   const [attachments, setAttachments] = useState<any[]>([]);
   const [darkMode, setDarkMode] = useState(true);
@@ -172,7 +173,15 @@ export default function Editor({ file, onSave, variables = [], projectId }: Edit
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ addWords: delta })
-            }); // Fire and forget
+            })
+              .then(res => res.json())
+              .then(data => {
+                if (data.success && onStatsUpdate) {
+                  onStatsUpdate(data.newTotal);
+                }
+              })
+              .catch(err => console.error('Error updating goals:', err));
+
             lastSavedWordCountRef.current = currentCount;
           }
 
