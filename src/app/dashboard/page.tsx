@@ -15,7 +15,7 @@ import WelcomeScreen from '@/components/WelcomeScreen';
 import GraphView from '@/components/GraphView';
 import PacingGraph from '@/components/PacingGraph';
 import { Project, FileNode } from '@/types/models';
-import { Layout, Grid, List, LogOut, Menu, X, Settings, Network, BarChart3, HelpCircle, Maximize2, Minimize2, CalendarClock } from 'lucide-react';
+import { Layout, Grid, List, LogOut, Menu, X, Settings, Network, BarChart3, HelpCircle, Maximize2, Minimize2, CalendarClock, Home } from 'lucide-react';
 import { signOut, useSession } from 'next-auth/react';
 
 const Editor = dynamic(() => import('@/components/Editor'), { ssr: false });
@@ -376,6 +376,13 @@ export default function Dashboard() {
                             >
                                 <Menu size={20} />
                             </button>
+                            <button
+                                onClick={() => setCurrentProject(null)}
+                                className="p-2 -ml-2 hover:bg-white/10 rounded-md text-gray-400 hover:text-white transition-colors"
+                                title="Volver al Inicio (Cerrar Proyecto)"
+                            >
+                                <Home size={20} />
+                            </button>
                         </div>
 
                         <div className="flex gap-2 bg-black/20 p-1 rounded-lg">
@@ -448,6 +455,13 @@ export default function Dashboard() {
                                 title="Modo Zen (Pantalla Completa)"
                             >
                                 <Maximize2 size={18} />
+                            </button>
+                            <button
+                                onClick={() => signOut({ callbackUrl: '/login' })}
+                                className="p-2 rounded-md text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                                title="Cerrar Sesión"
+                            >
+                                <LogOut size={18} />
                             </button>
                         </div>
                     </div>

@@ -1,12 +1,12 @@
 # Guía de Despliegue en Vercel
 
-Esta guía detalla cómo desplegar la aplicación Arcano en Vercel y configurar tu dominio personalizado `www.grupoaludra.com`.
+Esta guía detalla cómo desplegar la aplicación Arcano en Vercel y configurar tu dominio personalizado.
 
 ## 1. Prerrequisitos
 
 *   Cuenta en [Vercel](https://vercel.com).
 *   Repositorio del proyecto en GitHub (asegúrate de haber subido los últimos cambios).
-*   Acceso al cPanel de `www.grupoaludra.com`.
+*   Acceso al cPanel de `grupoaludra.com`.
 
 ## 2. Despliegue en Vercel
 
@@ -15,38 +15,51 @@ Esta guía detalla cómo desplegar la aplicación Arcano en Vercel y configurar 
 3.  En la configuración del proyecto (**Configure Project**):
     *   **Framework Preset**: Next.js (debería detectarse automáticamente).
     *   **Environment Variables**: Despliega esta sección y agrega las siguientes variables (copia los valores de tu `.env.local`):
-        *   `MONGODB_URI`: Tu conexión a MongoDB Atlas.
-        *   `AUTH_SECRET`: Tu secreto de autenticación (puedes generar uno nuevo o usar el existente).
-        *   `OPENAI_API_KEY`: Tu clave de API para la IA.
+        *   `MONGODB_URI`: Tu conexión a MongoDB Atlas (debe incluir usuario y contraseña correctos).
+        *   `AUTH_SECRET`: Tu secreto de autenticación.
+        *   `GOOGLE_API_KEY`: Tu clave de API de Google Gemini (para la IA).
         *   `INVITE_CODE`: **IMPORTANTE**. Define aquí la contraseña para nuevos registros (ej: `escritores2025`).
 
 4.  Haz clic en **"Deploy"**. Vercel construirá la aplicación. Esto puede tardar unos minutos.
 
-## 3. Configuración del Dominio (Vercel)
+## 3. Configuración del Dominio (Subdominio)
 
-Una vez desplegado:
-1.  Ve al Dashboard de tu proyecto en Vercel.
-2.  Ve a **Settings** -> **Domains**.
-3.  Ingresa `www.grupoaludra.com` y haz clic en **Add**.
-4.  Vercel te mostrará unos registros DNS que necesitas configurar. Normalmente te sugerirá un registro **CNAME** o un registro **A**.
+Configuramos la aplicación para funcionar en `arcano.grupoaludra.com`.
 
-## 4. Configuración DNS (cPanel)
+1.  **En Vercel**:
+    *   Ve a **Settings** -> **Domains**.
+    *   Añade el dominio: `arcano.grupoaludra.com`.
+    *   Vercel te mostrará una configuración requerida (CNAME).
 
-1.  Accede a tu cuenta de cPanel.
-2.  Busca la sección **"Zone Editor"** o **"Editor de Zona DNS"**.
-3.  Busca el dominio `grupoaludra.com`.
-4.  **Si Vercel te pide un Registro A (para la raíz o @):**
-    *   Edita el registro `A` existente para `grupoaludra.com` y cambia la IP por la que te da Vercel (generalmente `76.76.21.21`).
-5.  **Si Vercel te pide un CNAME (para www):**
-    *   Busca el registro para `www.grupoaludra.com`.
-    *   Si es un registro `A`, elimínalo o cámbialo a `CNAME`.
-    *   Apunta el CNAME a `cname.vercel-dns.com` (o lo que indique Vercel).
+2.  **En tu cPanel (Proveedor de Dominio)**:
+    *   Ve a la herramienta **Zone Editor** o **DNS Manager**.
+    *   Busca tu dominio `grupoaludra.com`.
+    *   Añade un nuevo registro (+ Record):
+        *   **Type**: `CNAME`
+        *   **Name**: `arcano`
+        *   **Value (Target)**: `cname.vercel-dns.com` (o el valor que indique Vercel).
+        *   **TTL**: 14400 (o el defecto).
 
-> **Nota**: Los cambios de DNS pueden tardar desde unos minutos hasta 24 horas en propagarse globalmente.
+3.  **Verificación**:
+    *   Vuelve a Vercel. El indicador debe pasar a "Valid Configuration" ✅.
+    *   Vercel generará automáticamente el certificado SSL (HTTPS).
 
-## 5. Verificación
+## 4. Cómo Actualizar la Aplicación (CI/CD)
 
-1.  Intenta acceder a `https://www.grupoaludra.com`.
-2.  Deberías ver la pantalla de Login de Arcano.
-3.  Ve a **"Registrarse"**.
-4.  Intenta crear una cuenta usando el `INVITE_CODE` que configuraste en el paso 2.
+Vercel tiene un sistema de **Despliegue Continuo**. Esto significa que actualizar la aplicación en producción es automático:
+
+1.  **Haz tus cambios en local**: Edita el código en tu computadora como siempre.
+2.  **Prueba**: Asegúrate de que todo funcione (`npm run dev`).
+3.  **Sube los cambios a GitHub**:
+    Abre tu terminal y ejecuta:
+    ```bash
+    git add .
+    git commit -m "Descripción de tus cambios"
+    git push origin master
+    ```
+4.  **Listo**:
+    *   Vercel detectará automáticamente el nuevo "commit" en GitHub.
+    *   Iniciará un nuevo "Build" (construcción) en sus servidores.
+    *   Si todo sale bien, la nueva versión reemplazará a la anterior en `arcano.grupoaludra.com` en unos minutos.
+
+> **Nota**: Si la actualización falla (por ejemplo, un error de código), Vercel mantendrá la versión anterior funcionando para no romper el sitio. Puedes ver el estado en el Dashboard de Vercel.
