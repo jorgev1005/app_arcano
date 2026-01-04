@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Project } from '@/types/models';
-import { X, Plus, Trash2, Save, Download } from 'lucide-react';
+import { Project, FileNode } from '@/types/models';
+import { X, Plus, Trash2, Save, Download, Link as LinkIcon, Unlink, BookOpen } from 'lucide-react';
 
 interface ProjectSettingsProps {
     project: Project;
     onClose: () => void;
     onUpdate: (projectId: string, updates: any) => void;
+    files?: FileNode[];
 }
 
-export default function ProjectSettings({ project, onClose, onUpdate }: ProjectSettingsProps) {
-    const [variables, setVariables] = useState<{ key: string; value: string }[]>([]);
+export default function ProjectSettings({ project, onClose, onUpdate, files = [] }: ProjectSettingsProps) {
+    const [variables, setVariables] = useState<{ key: string; value: string; entityId?: string }[]>([]);
     const [settings, setSettings] = useState({
         genre: 'custom',
         structure: 'western',
@@ -39,11 +40,29 @@ export default function ProjectSettings({ project, onClose, onUpdate }: ProjectS
         setVariables(newVars);
     };
 
-    const handleChange = (index: number, field: 'key' | 'value', text: string) => {
+    const handleChange = (index: number, field: 'key' | 'value' | 'entityId', text: string) => {
         const newVars = [...variables];
-        newVars[index][field] = text;
+        // If changing key/value manually, maybe clear entityId if it conflicts? 
+        // For now let's just update.
+        (newVars[index] as any)[field] = text;
+
+        // If updating entityId manually (from dropdown logic below), we also update value
+        if (field === 'entityId') {
+            const entity = files.find(f => f._id === text);
+            if (entity) {
+                newVars[index].value = entity.title;
+            } else if (text === '') {
+                // Clear
+                newVars[index].entityId = undefined;
+                newVars[index].value = '';
+            }
+        }
+
         setVariables(newVars);
     };
+
+    // Filter available entities
+    const linkableEntities = files.filter(f => ['character', 'location', 'item'].includes(f.type));
 
     const handleSave = () => {
         // Filter out empty keys
@@ -147,7 +166,32 @@ export default function ProjectSettings({ project, onClose, onUpdate }: ProjectS
                                         onChange={(e) => handleChange(index, 'value', e.target.value)}
                                         placeholder="Valor final (ej. Juan)"
                                         className="bg-transparent border-b border-white/20 text-white focus:outline-none focus:border-blue-500 flex-1 px-1"
+                                        disabled={!!variable.entityId} // Disable manual edit if linked
                                     />
+
+                                    {/* Entity Linker */}
+                                    <div className="relative group/link">
+                                        <button
+                                            className={`p-1 rounded hover:bg-white/10 ${variable.entityId ? 'text-blue-400' : 'text-gray-600'}`}
+                                            title={variable.entityId ? "Vinculado a Entidad" : "Vincular a Entidad"}
+                                        >
+                                            <LinkIcon size={14} />
+                                        </button>
+
+                                        {/* Dropdown for Linking */}
+                                        <select
+                                            className="absolute inset-0 opacity-0 cursor-pointer"
+                                            value={variable.entityId || ''}
+                                            onChange={(e) => handleChange(index, 'entityId', e.target.value)}
+                                        >
+                                            <option value="">Sin Vínculo</option>
+                                            {linkableEntities.map(entity => (
+                                                <option key={entity._id} value={entity._id}>
+                                                    {entity.type === 'character' ? '👤' : entity.type === 'location' ? '📍' : '📦'} {entity.title}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
                                     <button onClick={() => handleRemoveVariable(index)} className="text-gray-600 hover:text-red-400 p-1">
                                         <Trash2 size={14} />
                                     </button>
@@ -170,7 +214,15 @@ export default function ProjectSettings({ project, onClose, onUpdate }: ProjectS
                     >
                         <Download size={16} className="text-blue-400 group-hover:text-blue-300" /> Exportar Copia de Seguridad Completa (.json)
                     </button>
+                    <button
+                        onClick={() => window.open(`/api/export/${project._id}/epub`, '_blank')}
+                        className="w-full mt-3 bg-neutral-800 hover:bg-neutral-700 border border-white/10 text-gray-300 hover:text-white px-4 py-3 rounded-lg flex items-center justify-center gap-2 transition-all font-medium text-sm group"
+                    >
+                        <BookOpen size={16} className="text-orange-400 group-hover:text-orange-300" /> Exportar eBook (ePub / Kindle)
+                    </button>
+
                     <p className="text-xs text-gray-600 mt-2 text-center">Incluye todo el contenido, sinopsis y estructura.</p>
+                    <p className="text-[10px] text-gray-500 mt-1 text-center italic">El orden de los capítulos sigue la estructura actual del Binder.</p>
                 </div>
 
                 <div className="p-4 border-t border-white/10 flex justify-end">
@@ -182,6 +234,6 @@ export default function ProjectSettings({ project, onClose, onUpdate }: ProjectS
                     </button>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

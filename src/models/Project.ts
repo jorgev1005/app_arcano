@@ -8,11 +8,19 @@ const ProjectSchema = new mongoose.Schema({
   files: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }],
   variables: [{
     key: String,
-    value: String
+    value: String,
+    entityId: String
   }],
   graphData: {
     edges: [], // Allow any structure (Mixed) to store ReactFlow styles/handles
     positions: { type: mongoose.Schema.Types.Mixed } // Use Mixed for flexible object
+  },
+  canvasState: {
+    offset: {
+      x: { type: Number, default: 0 },
+      y: { type: Number, default: 0 }
+    },
+    scale: { type: Number, default: 1 }
   },
   settings: {
     genre: {

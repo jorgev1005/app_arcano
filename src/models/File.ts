@@ -5,7 +5,7 @@ const FileSchema = new mongoose.Schema({
   content: { type: String, default: '' },
   type: {
     type: String,
-    enum: ['folder', 'file', 'text', 'character', 'location', 'item', 'trash'],
+    enum: ['folder', 'file', 'text', 'character', 'location', 'item', 'trash', 'idea'],
     default: 'file'
   },
   parent: { type: mongoose.Schema.Types.ObjectId, ref: 'File' },
@@ -44,6 +44,10 @@ const FileSchema = new mongoose.Schema({
     focus: { type: Number, default: 5 },       // 0-10
     dissonance: { type: Number, default: 1 },  // 1-10
     polarity: { type: Number, default: 0 }     // -10 to +10
+  },
+  position: {
+    x: { type: Number, default: 0 },
+    y: { type: Number, default: 0 }
   },
   createdAt: { type: Date, default: Date.now },
 });

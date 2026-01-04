@@ -3,10 +3,14 @@ export type Project = {
   title: string;
   description?: string;
   coverImage?: string;
-  variables?: { key: string; value: string }[];
+  variables?: { key: string; value: string; entityId?: string }[];
   graphData?: {
     edges: { id: string; source: string; target: string; type?: string }[];
     positions: Record<string, { x: number; y: number }>;
+  };
+  canvasState?: {
+    offset: { x: number; y: number };
+    scale: number;
   };
   settings?: {
     genre: 'sci_fi' | 'thriller' | 'eastern_slice' | 'custom';
@@ -26,7 +30,7 @@ export type FileNode = {
   _id: string;
   title: string;
   content?: string;
-  type: 'file' | 'folder' | 'text' | 'character' | 'location' | 'item' | 'trash';
+  type: 'file' | 'folder' | 'text' | 'character' | 'location' | 'item' | 'trash' | 'idea';
   synopsis?: string;
   status?: string;
   isSystem?: boolean;
@@ -57,4 +61,5 @@ export type FileNode = {
   };
   data?: any;
   children?: FileNode[];
+  position?: { x: number; y: number };
 };

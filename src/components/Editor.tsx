@@ -13,6 +13,52 @@ interface EditorProps {
   onStatsUpdate?: (newTotal: number) => void;
 }
 
+// Helper to check and auto-link entities
+const checkAutoLinks = (content: string, variables: { key: string; entityId?: string }[], currentFile: any): any => {
+  let updates: any = {};
+  let newLinks = [...(currentFile.links || [])];
+  let newSceneData = { ...currentFile.sceneData };
+  let hasChanges = false;
+
+  variables.forEach(v => {
+    // Check with and without hash, case insensitive
+    const lowerContent = content.toLowerCase();
+    const key = v.key.toLowerCase();
+    const marker = `#${key}`;
+    const bareKey = key; // In case user types just the word? No, marker implies #.
+
+    if (v.entityId && (lowerContent.includes(marker) || lowerContent.includes(key))) { // Relaxed check
+      // Check Visual Link
+      // Ensure we deal with string IDs
+      const existingLink = newLinks.find(l => (typeof l === 'object' ? l._id : l) === v.entityId);
+
+      if (!existingLink) {
+        newLinks.push(v.entityId);
+        hasChanges = true;
+      }
+
+      // Check Semantic Link (Character List)
+      // Assuming we can fetch entity type easily? We might strictly assume char for sceneData.characters for now
+      // or we just blindly add to links which handles visual.
+      // But user specifically asked for "automatic relation".
+
+      const currentChars = newSceneData.characters || [];
+      if (!currentChars.includes(v.entityId)) {
+        newSceneData.characters = [...currentChars, v.entityId];
+        // We mark changes but we only assign to updates if truly valid
+        hasChanges = true;
+      }
+    }
+  });
+
+  if (hasChanges) {
+    updates.links = newLinks;
+    updates.sceneData = newSceneData;
+    return updates;
+  }
+  return null;
+};
+
 export default function Editor({ file, onSave, variables = [], projectId, onStatsUpdate }: EditorProps) {
   const [content, setContent] = useState(file?.content || '');
   const [attachments, setAttachments] = useState<any[]>([]);
@@ -29,7 +75,7 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
   const contentRef = useRef(content);
   const attachmentsRef = useRef(attachments);
   const wordCountRef = useRef(wordCount);
-  const saveStatusRef = useRef(saveStatus);
+  const saveStatusRef = useRef<any>(saveStatus); // Relax type for offline
   const lastSavedWordCountRef = useRef(0); // Track for Delta
 
   const [isListening, setIsListening] = useState(false);
@@ -53,14 +99,34 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
 
       // 1. Force Save previous file if unsaved
       if (lastFileIdRef.current && (saveStatusRef.current === 'unsaved' || saveStatusRef.current === 'saving')) {
-        // ... (Force save logic omitted for brevity, logic remains similar but ideally sends delta too if we want perfect accuracy)
+        // ...
       }
 
-      // 2. Load New File
-      setContent(file.content || '');
+      // Check for OFFline Backup
+      const offlineBackup = localStorage.getItem(`offline_bk_${file._id}`);
+      if (offlineBackup) {
+        try {
+          const bk = JSON.parse(offlineBackup);
+          // Simple conflict resolution: Check timestamp or just ask/overwrite. 
+          // For now, if local exists, we assume it's newer/unsynced and use it, alerting user.
+          // Ideally we check dates. Here we just set it.
+          setContent(bk.content || '');
+          if (bk.content !== file.content) {
+            // Alert user subtly or just mark as unsaved
+            console.log("Restored offline backup");
+            setSaveStatus('unsaved'); // Mark unsaved to trigger sync attempt eventually
+          }
+          setAttachments(file.attachments || []); // Attachments logic usually server side, keep server
+        } catch (e) {
+          setContent(file.content || '');
+        }
+      } else {
+        setContent(file.content || '');
+      }
+
       setAttachments(file.attachments || []);
       lastFileIdRef.current = file._id;
-      setSaveStatus('saved');
+      if (!offlineBackup) setSaveStatus('saved');
 
       // Initialize Delta Tracking
       const initialCount = countWords(file.content || '');
@@ -155,7 +221,12 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
         const res = await fetch(`/api/files/${file._id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content, attachments, wordCount }),
+          body: JSON.stringify({
+            content,
+            attachments,
+            wordCount,
+            ...checkAutoLinks(content, variables, file) // Merge links/sceneData updates
+          }),
         });
 
         if (res.ok) {
@@ -191,6 +262,15 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
         }
       } catch (error) {
         console.error('Error saving:', error);
+        // OFFLINE FALLBACK
+        try {
+          localStorage.setItem(`offline_bk_${file._id}`, JSON.stringify({
+            content,
+            timestamp: Date.now()
+          }));
+          setSaveStatus('unsaved'); // Technically 'saved locally' but 'unsaved' to server.
+          // visual hint could be improved
+        } catch (e) { console.error("Local storage full", e) }
       }
     }
   };
@@ -351,7 +431,7 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
           </div>
         </div>
 
-        <div className={`${darkMode ? 'bg-transparent' : 'bg-white'} transition-colors rounded-lg h-[calc(100vh-220px)] min-h-[400px] mb-2 relative`}>
+        <div className={`${darkMode ? 'bg-transparent' : 'bg-white'} transition-colors rounded-lg h-[calc(100dvh-220px)] min-h-[400px] mb-2 relative`}>
           {viewMode === 'edit' ? (
             <ReactQuill
               key={file?._id}
@@ -409,11 +489,11 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
           {viewMode === 'edit' && (
             <div className="flex items-center gap-4 flex-1 justify-end">
               <span className={`text-xs uppercase font-bold tracking-wider ${saveStatus === 'saving' ? 'text-blue-400 animate-pulse' :
-                saveStatus === 'unsaved' ? 'text-yellow-500' :
+                saveStatus === 'unsaved' ? 'text-orange-500' : // Changed to orange for visibility
                   'text-green-500'
                 }`}>
                 {saveStatus === 'saving' ? 'Guardando...' :
-                  saveStatus === 'unsaved' ? 'Sin Guardar' :
+                  saveStatus === 'unsaved' ? 'Offline / Sin Guardar' :
                     'Guardado'}
               </span>
               {saveStatus !== 'saved' && (

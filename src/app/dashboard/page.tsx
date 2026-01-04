@@ -11,11 +11,19 @@ import ProjectPreview from '@/components/ProjectPreview'; // New Import
 import FeedbackModal from '@/components/FeedbackModal'; // New Import
 import TimelineView from '@/components/TimelineView'; // New Import
 import GoalWidget from '@/components/GoalWidget'; // New Import
+import InfiniteCanvas from '@/components/InfiniteCanvas'; // New Import
+import Sandbox from '@/components/Sandbox';
 import WelcomeScreen from '@/components/WelcomeScreen';
 import GraphView from '@/components/GraphView';
 import PacingGraph from '@/components/PacingGraph';
 import { Project, FileNode } from '@/types/models';
-import { Layout, Grid, List, LogOut, Menu, X, Settings, Network, BarChart3, HelpCircle, Maximize2, Minimize2, CalendarClock, Home } from 'lucide-react';
+import {
+    Layout, Grid, FileText, Menu, Settings, X, Search, Plus,
+    Share2, Folder, ChevronRight, ChevronDown, MoreVertical,
+    Trash2, Save, Moon, Sun, Home, Activity, Lock, Maximize,
+    Clock, Calendar, Minimize2, Box, List, Network, BarChart3,
+    CalendarClock, HelpCircle, Maximize2, LogOut
+} from 'lucide-react';
 import { signOut, useSession } from 'next-auth/react';
 
 const Editor = dynamic(() => import('@/components/Editor'), { ssr: false });
@@ -27,7 +35,7 @@ export default function Dashboard() {
     const [files, setFiles] = useState<FileNode[]>([]);
     const [currentFile, setCurrentFile] = useState<FileNode | null>(null);
     const [selectedFolder, setSelectedFolder] = useState<string | null>(null); // Lifted state
-    const [view, setView] = useState<'editor' | 'corkboard' | 'outliner' | 'graph' | 'analytics' | 'timeline'>('editor');
+    const [view, setView] = useState<'editor' | 'corkboard' | 'outliner' | 'graph' | 'analytics' | 'timeline' | 'canvas' | 'sandbox'>('editor');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showPreview, setShowPreview] = useState(false); // New State
@@ -42,7 +50,29 @@ export default function Dashboard() {
         if (isMobile) {
             setIsSidebarOpen(true);
         }
+
+        // 1. Auto-Zen on Phone
+        if (window.innerWidth < 768) {
+            setIsZenMode(true);
+        }
+
+        // 2. Restore Project Session (Delay slightly to ensure auth loaded if needed, but here is fine)
+        const lastProjectId = localStorage.getItem('arcano_last_project');
+        if (lastProjectId) {
+            // Logic handled in fetchProjects or separate effect dependent on projects
+        }
     }, []);
+
+    // Restore Project once projects are loaded
+    useEffect(() => {
+        if (projects.length > 0 && !currentProject) {
+            const lastProjectId = localStorage.getItem('arcano_last_project');
+            const targetProject = projects.find(p => p._id === lastProjectId);
+            if (targetProject) {
+                selectProject(targetProject);
+            }
+        }
+    }, [projects]); // Run when projects load
 
     const fetchProjects = async () => {
         try {
@@ -152,12 +182,21 @@ export default function Dashboard() {
 
     const selectProject = async (project: Project) => {
         setCurrentProject(project);
+        localStorage.setItem('arcano_last_project', project._id); // Save Session
+
         const res = await fetch(`/api/files?projectId=${project._id}`);
         if (!res.ok) {
             console.error('Error al cargar archivos del proyecto');
             return;
         }
         const data: { files: FileNode[] } = await res.json();
+
+        // Restore Last File for this project
+        const lastFileId = localStorage.getItem(`arcano_last_file_${project._id}`);
+        let storedFile = null;
+        if (lastFileId) {
+            storedFile = data.files.find(f => f._id === lastFileId);
+        }
 
         // Check/Create "Extras" folder (System Folder)
         const extrasFolder = data.files.find(f => f.isSystem);
@@ -182,7 +221,35 @@ export default function Dashboard() {
             } catch (e) { console.error("Error creating Extras folder", e); }
         }
 
+        // Check/Create "Sandbox" folder (System Folder)
+        const sandboxFolder = data.files.find(f => f.isSystem && f.title === 'Sandbox');
+        if (!sandboxFolder) {
+            try {
+                const createRes = await fetch('/api/files', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: 'Sandbox',
+                        projectId: project._id,
+                        type: 'folder',
+                        parent: null,
+                        isSystem: true // Protected
+                    }),
+                });
+                if (createRes.ok) {
+                    const newData = await createRes.json();
+                    data.files.push(newData.file);
+                }
+            } catch (e) { console.error("Error creating Sandbox folder", e); }
+        }
+
         setFiles(data.files);
+
+        // If we restored a file, select it now (after setting files)
+        if (storedFile) {
+            setCurrentFile(storedFile);
+            setView('editor');
+        }
     };
 
 
@@ -215,14 +282,25 @@ export default function Dashboard() {
                 setCurrentFile(data.file);
                 setView('editor');
             }
+            // Return the created file to caller
+            return data.file;
         } catch (error) {
             console.error('Error creating file:', error);
             alert('Error al crear el elemento');
+            throw error;
         }
     };
 
     const updateFile = async (fileId: string, updates: any) => {
-        console.log('UpdateFile called for:', fileId, 'Updates:', updates);
+        // Optimistic Update
+        const previousFiles = files;
+        const previousCurrentFile = currentFile;
+
+        setFiles(prevFiles => prevFiles.map(f => f._id === fileId ? { ...f, ...updates } : f));
+        if (currentFile?._id === fileId) {
+            setCurrentFile(prev => prev ? { ...prev, ...updates } : null);
+        }
+
         try {
             const res = await fetch(`/api/files/${fileId}`, {
                 method: 'PUT',
@@ -232,23 +310,23 @@ export default function Dashboard() {
 
             if (!res.ok) throw new Error('Error al actualizar archivo');
 
-            const data = await res.json();
-
-            // Update local state
-            setFiles(prevFiles => prevFiles.map(f => f._id === fileId ? { ...f, ...updates } : f));
-
-            // Update current file if it's the one being modified
-            if (currentFile?._id === fileId) {
-                setCurrentFile(prev => prev ? { ...prev, ...updates } : null);
-            }
+            // Optional: Confirm with server data if needed, but usually optimistic is fine.
+            // const data = await res.json(); 
+            // setFiles(...) // Only if we expect server transformations
         } catch (error) {
             console.error('Error updating file:', error);
-            alert('Error al actualizar el elemento');
+            // Revert on error
+            setFiles(previousFiles);
+            setCurrentFile(previousCurrentFile);
+            alert('Error al actualizar: cambios revertidos');
         }
     };
 
     const selectFile = (file: FileNode) => {
         setCurrentFile(file);
+        if (currentProject) {
+            localStorage.setItem(`arcano_last_file_${currentProject._id}`, file._id); // Save File Session per project
+        }
         setView('editor');
     };
 
@@ -328,12 +406,20 @@ export default function Dashboard() {
                 {isSidebarOpen ? <X /> : <Menu />}
             </button>
 
+            {/* Mobile Sidebar Overlay */}
+            {isSidebarOpen && !isZenMode && (
+                <div
+                    className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm lg:hidden"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
             {/* Sidebar Container */}
             {!isZenMode && (
                 <div className={`
                     fixed inset-y-0 left-0 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
                     lg:relative lg:translate-x-0 transition-transform duration-200 ease-in-out
-                    w-64 border-r border-white/10 z-40 bg-neutral-900
+                    w-72 border-r border-white/10 z-40 bg-neutral-900 shadow-2xl
                 `}>
                     {/* Binder Panel */}
                     <Binder
@@ -385,7 +471,7 @@ export default function Dashboard() {
                             </button>
                         </div>
 
-                        <div className="flex gap-2 bg-black/20 p-1 rounded-lg">
+                        <div className="flex gap-1 bg-black/20 p-1 rounded-lg">
                             <button
                                 onClick={() => setView('editor')}
                                 className={`p-2 rounded-md transition-all ${view === 'editor' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
@@ -408,13 +494,7 @@ export default function Dashboard() {
                             >
                                 <List size={18} />
                             </button>
-                            <button
-                                onClick={() => setView('graph')}
-                                className={`p-2 rounded-md transition-all ${view === 'graph' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                                title="Vista Gráfica (Nodos)"
-                            >
-                                <Network size={18} />
-                            </button>
+
                             <button
                                 onClick={() => setView('analytics')}
                                 className={`p-2 rounded-md transition-all ${view === 'analytics' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
@@ -429,6 +509,27 @@ export default function Dashboard() {
                             >
                                 <CalendarClock size={18} />
                             </button>
+                            <button
+                                onClick={() => setView('canvas')}
+                                className={`p-2 rounded-md transition-all ${view === 'canvas' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                title="Corcho Libre (Canvas)"
+                            >
+                                <Maximize size={18} />
+                            </button>
+                            <button
+                                onClick={() => setView('sandbox')}
+                                className={`p-2 rounded-md transition-all ${view === 'sandbox' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                title="Caja de Arena (Sandbox)"
+                            >
+                                <Box size={18} />
+                            </button>
+                            <button
+                                onClick={() => setView('graph')}
+                                className={`p-2 rounded-md transition-all ${view === 'graph' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                title="Grafo de Relaciones"
+                            >
+                                <Network size={18} />
+                            </button>
                         </div>
                         {/* ... Right side header ... */}
                         <div className="flex items-center gap-4">
@@ -441,6 +542,13 @@ export default function Dashboard() {
                             <div className="text-sm font-medium text-gray-400">
                                 {currentProject?.title} / {currentFile?.title || (selectedFolder ? files.find(f => f._id === selectedFolder)?.title : 'Raíz')}
                             </div>
+                            <button
+                                onClick={() => setShowSettings(true)}
+                                className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                                title="Configuración del Proyecto (Variables #)"
+                            >
+                                <Settings size={18} />
+                            </button>
                             <button
                                 onClick={() => setIsFeedbackOpen(true)}
                                 className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
@@ -551,6 +659,30 @@ export default function Dashboard() {
                             onSelect={selectFile}
                         />
                     )}
+                    {view === 'canvas' && (
+                        <InfiniteCanvas
+                            files={files}
+                            onUpdateFile={updateFile}
+                            onSelectFile={selectFile}
+                            initialScale={currentProject?.canvasState?.scale}
+                            initialOffset={currentProject?.canvasState?.offset}
+                            onSaveCanvasState={(state) => {
+                                if (currentProject) {
+                                    updateProject(currentProject._id, { canvasState: state });
+                                }
+                            }}
+                        />
+                    )}
+                    {view === 'sandbox' && (
+                        <Sandbox
+                            files={files}
+                            onUpdateFile={updateFile}
+                            onSelectFile={selectFile}
+                            createFile={createFile}
+                            deleteFile={deleteFile}
+                            projectId={currentProject?._id}
+                        />
+                    )}
                 </div>
             </div>
 
@@ -571,6 +703,7 @@ export default function Dashboard() {
                     project={currentProject}
                     onClose={() => setShowSettings(false)}
                     onUpdate={updateProject}
+                    files={files}
                 />
             )}
 

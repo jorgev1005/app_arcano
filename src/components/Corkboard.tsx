@@ -127,7 +127,12 @@ export default function Corkboard({ files, onSelect, onReorder, currentFolder, o
         >
           <SortableContext items={files.map(f => f._id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 pb-10">
-              {files.map((file) => (
+              {files.filter(f => {
+                // Find Sandbox folder ID
+                const sandboxStart = files.find(sf => sf.title === 'Sandbox' && sf.isSystem);
+                const isSandboxContent = f.type === 'idea' || (sandboxStart && f.parent === sandboxStart._id) || (f.isSystem && f.title === 'Sandbox');
+                return !isSandboxContent;
+              }).map((file) => (
                 <SortableCard key={file._id} file={file} onSelect={onSelect} />
               ))}
             </div>

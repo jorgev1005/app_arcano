@@ -2,7 +2,7 @@ import { useMemo, useCallback, useEffect, useState } from 'react';
 import { ReactFlow, Background, Controls, Node, Edge, Position, useNodesState, useEdgesState, addEdge, Connection, BackgroundVariant, MarkerType, Handle } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Project, FileNode } from '@/types/models';
-import { Folder, FileText, User, MapPin, Package, Archive, Play, Flag, Layers, Filter } from 'lucide-react';
+import { Folder, FileText, User, MapPin, Package, Archive, Play, Flag, Layers, Filter, Heart, Swords, Handshake, Users as UsersIcon } from 'lucide-react';
 
 interface GraphViewProps {
     files: FileNode[];
@@ -80,10 +80,24 @@ const getIcon = (type: string, isSystem: boolean) => {
         case 'item': return <Package size={16} color="#fb923c" />;
         default: return <FileText size={16} color="#60a5fa" />;
     }
+}
+
+
+const getEdgeStyle = (type?: string) => {
+    switch (type) {
+        case 'romance': return { stroke: '#ec4899', strokeWidth: 3, label: '❤️' };
+        case 'enemy': return { stroke: '#ef4444', strokeWidth: 3, strokeDasharray: '5,5', label: '⚔️' };
+        case 'family': return { stroke: '#3b82f6', strokeWidth: 3, label: '🩸' };
+        case 'alliance': return { stroke: '#22c55e', strokeWidth: 3, label: '🤝' };
+        default: return { stroke: '#a78bfa', strokeWidth: 2 };
+    }
 };
 
 export default function GraphView({ files, onSelect, project, onSaveGraph }: GraphViewProps) {
     const [foldersOnly, setFoldersOnly] = useState(false);
+    const [relationshipMode, setRelationshipMode] = useState(false);
+    const [showRelationModal, setShowRelationModal] = useState(false);
+    const [pendingConnection, setPendingConnection] = useState<Connection | null>(null);
 
     // Initial State Setup - Merging Auto-layout with Saved Data
     const { initialNodes, initialEdges } = useMemo(() => {
@@ -191,9 +205,44 @@ export default function GraphView({ files, onSelect, project, onSaveGraph }: Gra
         });
 
         return { initialNodes: nodes, initialEdges: edges };
-    }, [files, project, foldersOnly]);
+        return { initialNodes: nodes, initialEdges: edges };
+    }, [files, project, foldersOnly]); // Keep initial deps clean, filtering happens on Render
+
+    const filteredNodes = useMemo(() => {
+        // Apply "Relationship Mode" filter dynamicallly
+        if (!relationshipMode) return initialNodes;
+
+        // In Relationship Mode, show only Entities
+        return initialNodes.filter(n => {
+            // Keep System nodes if needed? No, usually not.
+            if (n.id === 'node-start' || n.id === 'node-end') return false;
+
+            // Check file type
+            const file = files.find(f => f._id === n.id);
+            if (!file) return false;
+            return ['character', 'location', 'item'].includes(file.type);
+        });
+    }, [initialNodes, relationshipMode, files]);
 
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+    // Sync filtered view effect
+    useEffect(() => {
+        if (relationshipMode) {
+            setNodes(filteredNodes);
+        } else {
+            // Restore full view (careful not to overwrite positions if we were editing?)
+            // Actually, when switching modes, we might want to reload initial structure but keep positions?
+            // For now, let's just use filteredNodes as the source of truth for display if we can.
+            // But ReactFlow needs `nodes` state.
+            setNodes(filteredNodes.length < initialNodes.length ? initialNodes : filteredNodes);
+            // Wait, this logic is tricky. 
+            // Better approach: `nodes` state always has everything, we just apply `hidden: true`?
+            // Or we just update the state entirely.
+            setNodes(initialNodes); // Reset to full on disable
+        }
+    }, [relationshipMode, initialNodes, filteredNodes, setNodes]);
+
+
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
     // Sync when props change - STRUCTURE ONLY
@@ -271,7 +320,9 @@ export default function GraphView({ files, onSelect, project, onSaveGraph }: Gra
         onSaveGraph({ edges: customEdgesToSave, positions: currentPositions });
     }, [edges, nodes, onSaveGraph]);
 
-    const onConnect = useCallback((params: Connection) => {
+
+
+    const handleStandardConnect = useCallback((params: Connection) => {
         const newEdge: Edge = {
             ...params,
             id: `e-${params.source}-${params.target}-${Date.now()}`,
@@ -280,15 +331,11 @@ export default function GraphView({ files, onSelect, project, onSaveGraph }: Gra
             style: { stroke: '#a78bfa', strokeWidth: 2 },
             markerEnd: { type: MarkerType.ArrowClosed, color: '#a78bfa' },
             zIndex: 1000,
-            data: {} // Ensure data exists if required, usually optional but helpful for strict types
+            data: {}
         };
         setEdges((eds) => addEdge(newEdge, eds));
 
         // Save connection
-        // We need to merge with existing edges from state
-        // This is a bit tricky since ReactFlow state is local.
-        // We'll trigger a save with the NEW complete list of custom edges.
-        // We filter out hierarchy edges.
         const currentCustomEdges = edges.filter(e => !e.id.startsWith('e-hierarchy-'));
         const updatedEdges = [...currentCustomEdges, newEdge].map(e => ({
             id: e.id, source: e.source, target: e.target, type: e.type || 'smoothstep', zIndex: 1000
@@ -299,8 +346,56 @@ export default function GraphView({ files, onSelect, project, onSaveGraph }: Gra
         }), {});
 
         onSaveGraph({ edges: updatedEdges, positions: currentPositions });
+    }, [edges, nodes, onSaveGraph, setEdges]);
 
-    }, [edges, nodes, onSaveGraph]);
+    const onConnectStart = useCallback((params: Connection) => {
+        if (relationshipMode) {
+            setPendingConnection(params);
+            setShowRelationModal(true);
+        } else {
+            // Standard connection
+            handleStandardConnect(params);
+        }
+    }, [relationshipMode, handleStandardConnect]);
+
+    const confirmRelationship = (type: string) => {
+        if (!pendingConnection) return;
+
+        const styleData = getEdgeStyle(type);
+
+        const newEdge: Edge = {
+            ...pendingConnection,
+            id: `e-${pendingConnection.source}-${pendingConnection.target}-${Date.now()}`,
+            type: 'smoothstep',
+            animated: type === 'enemy', // Dashed lines maybe animated?
+            style: { stroke: styleData.stroke, strokeWidth: styleData.strokeWidth, strokeDasharray: styleData.strokeDasharray },
+            label: styleData.label,
+            labelStyle: { fill: 'white', fontSize: 20, fontWeight: 700 },
+            labelBgStyle: { fill: '#171717', fillOpacity: 0.7 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: styleData.stroke },
+            zIndex: 1000,
+            data: { relationType: type }
+        };
+
+        setEdges((eds) => addEdge(newEdge, eds));
+
+        // Save
+        const currentCustomEdges = edges.filter(e => !e.id.startsWith('e-hierarchy-'));
+        const updatedEdges = [...currentCustomEdges, newEdge].map(e => ({
+            ...e,
+            // Ensure data is saved
+            data: e.data, style: e.style, label: e.label, labelStyle: e.labelStyle, labelBgStyle: e.labelBgStyle
+        }));
+
+        const currentPositions = nodes.reduce((acc, node) => ({
+            ...acc, [node.id]: node.position
+        }), {});
+
+        onSaveGraph({ edges: updatedEdges, positions: currentPositions });
+
+        setShowRelationModal(false);
+        setPendingConnection(null);
+    };
 
     const onNodeDragStop = useCallback((_: any, node: Node) => {
         // Update single node position in save data
@@ -351,7 +446,47 @@ export default function GraphView({ files, onSelect, project, onSaveGraph }: Gra
                     <Layers size={16} />
                     Restaurar Diseño
                 </button>
+                <button
+                    onClick={() => setRelationshipMode(!relationshipMode)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border font-medium transition-colors ${relationshipMode ? 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-900/50' : 'bg-neutral-800 border-neutral-700 text-gray-300 hover:bg-neutral-700'}`}
+                >
+                    <UsersIcon size={16} />
+                    {relationshipMode ? 'Relaciones' : 'Estructura'}
+                </button>
             </div>
+
+
+
+
+            {/* Relationship Selection Modal */}
+            {showRelationModal && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-neutral-800 border border-neutral-700 p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4">
+                        <h3 className="text-lg font-bold text-white mb-4 text-center">Tipo de Relación</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button onClick={() => confirmRelationship('romance')} className="flex flex-col items-center gap-2 p-4 rounded-lg bg-pink-900/20 border border-pink-500/30 hover:bg-pink-900/40 hover:border-pink-500 transition-all text-pink-300">
+                                <Heart size={24} />
+                                <span className="font-bold">Romance</span>
+                            </button>
+                            <button onClick={() => confirmRelationship('enemy')} className="flex flex-col items-center gap-2 p-4 rounded-lg bg-red-900/20 border border-red-500/30 hover:bg-red-900/40 hover:border-red-500 transition-all text-red-300">
+                                <Swords size={24} />
+                                <span className="font-bold">Enemigos</span>
+                            </button>
+                            <button onClick={() => confirmRelationship('family')} className="flex flex-col items-center gap-2 p-4 rounded-lg bg-blue-900/20 border border-blue-500/30 hover:bg-blue-900/40 hover:border-blue-500 transition-all text-blue-300">
+                                <UsersIcon size={24} />
+                                <span className="font-bold">Familia</span>
+                            </button>
+                            <button onClick={() => confirmRelationship('alliance')} className="flex flex-col items-center gap-2 p-4 rounded-lg bg-green-900/20 border border-green-500/30 hover:bg-green-900/40 hover:border-green-500 transition-all text-green-300">
+                                <Handshake size={24} />
+                                <span className="font-bold">Alianza</span>
+                            </button>
+                        </div>
+                        <button onClick={() => { setShowRelationModal(false); setPendingConnection(null); }} className="mt-4 w-full py-2 text-sm text-gray-500 hover:text-white">
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Custom Confirmation Modal */}
             {showResetConfirm && (
@@ -393,7 +528,7 @@ export default function GraphView({ files, onSelect, project, onSaveGraph }: Gra
                 nodeTypes={nodeTypes}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
+                onConnect={onConnectStart}
                 onNodeDragStop={onNodeDragStop}
                 onNodeDoubleClick={onNodeDoubleClick}
                 onEdgesDelete={onEdgesDelete}

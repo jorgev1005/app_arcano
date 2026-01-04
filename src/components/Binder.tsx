@@ -298,6 +298,35 @@ export default function Binder({ projects, selectProject, createProject, files, 
       return sum;
     };
 
+    // 4. Custom Sort Implementation
+    const getSortWeight = (node: TreeNode) => {
+      // 1. Sandbox (Top Priority)
+      if (node.isSystem && node.title === 'Sandbox') return -10;
+
+      // 2. Entities
+      if (['character', 'location', 'item'].includes(node.type)) return 0;
+
+      // 3. System Extras (Bottom Priority)
+      if (node.isSystem) return 100;
+
+      // 4. Normal Folders (Chapters)
+      if (node.type === 'folder') return 10;
+
+      // 5. Normal Files (Scenes in root)
+      if (node.type === 'file') return 20;
+
+      return 50;
+    };
+
+    roots.sort((a, b) => {
+      const weightA = getSortWeight(a);
+      const weightB = getSortWeight(b);
+      if (weightA !== weightB) return weightA - weightB;
+
+      // Fallback: Order or Title
+      return (a.order || 0) - (b.order || 0) || a.title.localeCompare(b.title);
+    });
+
     roots.forEach(calcStats);
 
     return roots;
