@@ -18,6 +18,8 @@ Esta guía detalla cómo desplegar la aplicación Arcano en Vercel y configurar 
         *   `MONGODB_URI`: Tu conexión a MongoDB Atlas (debe incluir usuario y contraseña correctos).
         *   `AUTH_SECRET`: Tu secreto de autenticación.
         *   `GOOGLE_API_KEY`: Tu clave de API de Google Gemini (para la IA).
+        *   `AUTH_GOOGLE_ID`: Tu Client ID de Google.
+        *   `AUTH_GOOGLE_SECRET`: Tu Client Secret de Google.
         *   `INVITE_CODE`: **IMPORTANTE**. Define aquí la contraseña para nuevos registros (ej: `escritores2025`).
 
 4.  Haz clic en **"Deploy"**. Vercel construirá la aplicación. Esto puede tardar unos minutos.

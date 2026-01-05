@@ -25,6 +25,10 @@ export async function authenticate(
     }
 }
 
+export async function authenticateGoogle() {
+    await signIn('google', { redirectTo: '/dashboard' });
+}
+
 export async function register(
     prevState: string | undefined,
     formData: FormData,
