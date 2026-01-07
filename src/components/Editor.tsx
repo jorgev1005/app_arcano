@@ -299,7 +299,43 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
 
   // Highlight hashtags handling
   const handleChange = (content: string, delta: any, source: string, editor: any) => {
-    setContent(content);
+    // Smart Text: Auto-replace -- with —
+    if (source === 'user' && content.includes('--')) {
+      // 1. Capture current cursor
+      const currentSelection = editor.getSelection();
+      const cursorIndex = currentSelection ? currentSelection.index : 0;
+
+      // 2. Perform replacement
+      const newContent = content.replace(/--/g, '—');
+
+      if (newContent !== content) {
+        // 3. Update Content
+        setContent(newContent);
+
+        // 4. Restore Cursor (Corrected for length difference)
+        // We replaced 2 chars (--) with 1 char (—), so we lose 1 char per replacement *before* the cursor.
+        // However, calculating exactly how many were before cursor is complex in one go.
+        // Simplified approach: If we just typed it, cursor is likely at the end of the "--".
+        // Let's rely on Quill's next tick setSelection.
+
+        // Count how many replacements occurred BEFORE the cursor
+        const textBeforeCursor = content.substring(0, cursorIndex);
+        const matchCount = (textBeforeCursor.match(/--/g) || []).length;
+        const newCursorIndex = cursorIndex - matchCount;
+
+        // Use requestAnimationFrame to ensure React render cycle completes
+        requestAnimationFrame(() => {
+          const quill = quillRef.current?.getEditor();
+          if (quill) {
+            quill.setSelection(newCursorIndex, 0);
+          }
+        });
+      } else {
+        setContent(content);
+      }
+    } else {
+      setContent(content);
+    }
 
     // Auto-highlight on user input & Trigger Auto-save
     if (source === 'user') {
@@ -441,7 +477,10 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
               modules={modules}
               theme="snow"
               className="h-full"
-            />
+              preserveWhitespace
+            >
+              <div spellCheck={true} className="h-full" />
+            </ReactQuill>
           ) : viewMode === 'stats' ? (
             <div className={`h-full p-4 overflow-y-auto border rounded-lg ${darkMode ? 'border-neutral-700 bg-neutral-900 text-gray-300' : 'border-gray-200 bg-white text-gray-800'}`}>
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2">

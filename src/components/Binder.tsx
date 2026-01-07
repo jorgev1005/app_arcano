@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, ReactNode } from 'react';
 import { Project, FileNode } from '@/types/models';
-import { Folder, FolderOpen, FileText, User, MapPin, Plus, ChevronRight, ChevronDown, FolderPlus, FilePlus, Pencil, Package, MoreHorizontal, CornerUpLeft, Trash2, Archive, Eye, ListOrdered } from 'lucide-react';
+import { Folder, FolderOpen, FileText, User, MapPin, Plus, ChevronRight, ChevronDown, FolderPlus, FilePlus, Pencil, Package, MoreHorizontal, CornerUpLeft, Trash2, Archive, Eye, ListOrdered, Download, Upload } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors, DragEndEvent, DragOverlay, DragStartEvent, useDraggable, useDroppable, rectIntersection, pointerWithin } from '@dnd-kit/core';
 
 interface BinderProps {
@@ -11,7 +11,7 @@ interface BinderProps {
   createProject: (title: string) => void;
   files: FileNode[];
   selectFile: (file: FileNode) => void;
-  createFile: (title: string, type: string, parentId: string | null) => void;
+  createFile: (title: string, type: string, parentId: string | null) => Promise<any>;
   updateFile: (fileId: string, updates: any) => void;
   onReorder?: (newFiles: FileNode[]) => void;
   currentProject: Project | null;
@@ -55,7 +55,8 @@ const TreeItem = ({
   getIcon,
   updateFile,
   createFile,
-  deleteFile
+  deleteFile,
+  onExportJSON
 }: {
   node: TreeNode;
   depth?: number;
@@ -69,8 +70,9 @@ const TreeItem = ({
   handleRename: (file: FileNode) => void;
   getIcon: (type: string) => ReactNode;
   updateFile: (fileId: string, updates: any) => void;
-  createFile: (title: string, type: string, parentId: string | null) => void;
+  createFile: (title: string, type: string, parentId: string | null) => Promise<any>;
   deleteFile: (fileId: string) => void;
+  onExportJSON: (node: TreeNode) => void;
 }) => {
   const isFolder = node.type === 'folder';
   const isExpanded = expanded[node._id];
@@ -216,32 +218,44 @@ const TreeItem = ({
         >
           <Pencil size={12} />
         </button>
+
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onExportJSON(node); }}
+          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded text-gray-500 hover:text-green-300 transition-opacity"
+          title="Exportar JSON"
+        >
+          <Download size={12} />
+        </button>
       </div>
 
-      {isExpanded && hasChildren && (
-        <div>
-          {node.children!.map(child => (
-            <TreeItem
-              key={child._id}
-              node={child}
-              depth={depth + 1}
-              expanded={expanded}
-              toggleExpand={toggleExpand}
-              selectedFolder={selectedFolder}
-              setSelectedFolder={setSelectedFolder}
-              selectedFileId={selectedFileId}
-              setExpanded={setExpanded}
-              selectFile={selectFile}
-              handleRename={handleRename}
-              getIcon={getIcon}
-              updateFile={updateFile}
-              createFile={createFile}
-              deleteFile={deleteFile}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+      {
+        isExpanded && hasChildren && (
+          <div>
+            {node.children!.map(child => (
+              <TreeItem
+                key={child._id}
+                node={child}
+                depth={depth + 1}
+                expanded={expanded}
+                toggleExpand={toggleExpand}
+                selectedFolder={selectedFolder}
+                setSelectedFolder={setSelectedFolder}
+                selectedFileId={selectedFileId}
+                setExpanded={setExpanded}
+                selectFile={selectFile}
+                handleRename={handleRename}
+                getIcon={getIcon}
+                updateFile={updateFile}
+                createFile={createFile}
+                deleteFile={deleteFile}
+                onExportJSON={onExportJSON}
+              />
+            ))}
+          </div>
+        )
+      }
+    </div >
   );
 };
 
@@ -391,6 +405,64 @@ export default function Binder({ projects, selectProject, createProject, files, 
       createFile(title, type, selectedFolder);
       setShowCreateMenu(false);
     }
+  };
+
+  const handleExportJSON = (node: TreeNode) => {
+    const data = JSON.stringify(node, (key, value) => {
+      // Clean up circular references / system fields if needed
+      if (key === 'children') return value; // Keep children for recursive export
+      if (key === 'parent' || key === 'project') return undefined; // Remove parent ref for portability
+      return value;
+    }, 2);
+
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${node.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+
+        // Helper to recursively create nodes
+        const importNode = async (nodeData: any, parentId: string | null) => {
+          // Create the item
+          const newFile = await createFile(nodeData.title, nodeData.type, parentId);
+
+          // If it has content, update it
+          if (nodeData.content && newFile) {
+            updateFile(newFile._id, { content: nodeData.content });
+          }
+
+          // If it has children, recurse
+          if (nodeData.children && nodeData.children.length > 0 && newFile) {
+            // Sort by order to maintain structure
+            const sortedChildren = nodeData.children.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+            for (const child of sortedChildren) {
+              await importNode(child, newFile._id);
+            }
+          }
+        };
+
+        await importNode(json, selectedFolder);
+        alert('Importación completada');
+        setShowCreateMenu(false);
+      } catch (error) {
+        console.error("Import Error", error);
+        alert('Error al importar el archivo JSON');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset input
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -550,6 +622,11 @@ export default function Binder({ projects, selectProject, createProject, files, 
                   <button onClick={() => handleCreateType('item')} className="flex items-center gap-2 p-2 hover:bg-white/10 rounded text-left text-sm text-orange-300">
                     <Package size={14} /> Objeto
                   </button>
+                  <div className="h-px bg-white/10 my-1" />
+                  <label className="flex items-center gap-2 p-2 hover:bg-white/10 rounded text-left text-sm cursor-pointer text-gray-400 hover:text-white">
+                    <Upload size={14} /> Importar JSON
+                    <input type="file" accept=".json" className="hidden" onChange={handleImportJSON} />
+                  </label>
                 </div>
               )}
 
@@ -618,6 +695,7 @@ export default function Binder({ projects, selectProject, createProject, files, 
                 createFile={createFile}
                 deleteFile={deleteFile}
                 selectedFileId={selectedFileId}
+                onExportJSON={handleExportJSON}
               />
             ))}
           </div>

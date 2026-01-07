@@ -248,8 +248,10 @@ export default function Dashboard() {
         // If we restored a file, select it now (after setting files)
         if (storedFile) {
             setCurrentFile(storedFile);
-            setView('editor');
+        } else {
+            setCurrentFile(null);
         }
+        setView('editor');
     };
 
 
