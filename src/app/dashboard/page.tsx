@@ -25,7 +25,7 @@ import {
     Share2, Folder, ChevronRight, ChevronDown, MoreVertical,
     Trash2, Save, Moon, Sun, Home, Activity, Lock, Maximize,
     Clock, Calendar, Minimize2, Box, List, Network, BarChart3,
-    CalendarClock, HelpCircle, Maximize2, LogOut
+    CalendarClock, HelpCircle, Maximize2, LogOut, SlidersHorizontal
 } from 'lucide-react';
 import { signOut, useSession } from 'next-auth/react';
 
@@ -40,6 +40,7 @@ export default function Dashboard() {
     const [selectedFolder, setSelectedFolder] = useState<string | null>(null); // Lifted state
     const [view, setView] = useState<'editor' | 'corkboard' | 'outliner' | 'graph' | 'analytics' | 'timeline' | 'canvas' | 'sandbox'>('editor');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isInspectorOpen, setIsInspectorOpen] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showPreview, setShowPreview] = useState(false); // New State
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false); // New State
@@ -660,6 +661,14 @@ export default function Dashboard() {
                             <div className="hidden xl:block text-sm font-medium text-gray-400 max-w-[160px] truncate">
                                 {currentProject?.title} / {currentFile?.title || (selectedFolder ? files.find(f => f._id === selectedFolder)?.title : 'Raíz')}
                             </div>
+                            {/* Inspector mobile toggle button */}
+                            <button
+                                onClick={() => setIsInspectorOpen(!isInspectorOpen)}
+                                className={`lg:hidden p-2 rounded-md transition-colors ${isInspectorOpen ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+                                title="Inspector de Escena (Detalles, Tiempo, Análisis)"
+                            >
+                                <SlidersHorizontal size={18} />
+                            </button>
                             <button
                                 onClick={() => setShowSettings(true)}
                                 className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
@@ -825,14 +834,28 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Inspector */}
+            {/* Mobile Inspector Backdrop Overlay */}
+            {isInspectorOpen && !isZenMode && (
+                <div
+                    className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+                    onClick={() => setIsInspectorOpen(false)}
+                />
+            )}
+
+            {/* Inspector: Docked on Desktop, Drawer on Mobile */}
             {!isZenMode && (
-                <div className="hidden lg:block w-72 bg-white/5 backdrop-blur-xl border-l border-white/10">
+                <div className={`
+                    fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] bg-neutral-900 border-l border-white/10 shadow-2xl transition-transform duration-200 ease-in-out
+                    ${isInspectorOpen ? 'translate-x-0' : 'translate-x-full'}
+                    lg:relative lg:translate-x-0 lg:w-72 lg:z-auto lg:bg-white/5 lg:backdrop-blur-xl lg:shadow-none
+                    flex flex-col h-full
+                `}>
                     <Inspector
                         file={currentFile}
                         onSave={handleFileSave}
                         allFiles={files}
                         projectSettings={currentProject?.settings}
+                        onClose={() => setIsInspectorOpen(false)}
                     />
                 </div>
             )}

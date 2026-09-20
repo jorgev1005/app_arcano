@@ -439,13 +439,15 @@ const NarrativeSheet = ({
 interface InspectorProps {
   file: FileNode | null;
   onSave: (file: FileNode) => void;
+  onClose?: () => void;
 }
 
 export default function Inspector({
   file,
   onSave,
   allFiles = [],
-  projectSettings
+  projectSettings,
+  onClose
 }: InspectorProps & {
   allFiles?: FileNode[],
   projectSettings?: { genre?: string }
@@ -520,13 +522,22 @@ export default function Inspector({
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: finalPrompt, type }),
+        body: JSON.stringify({
+          type,
+          prompt: finalPrompt,
+          context: {
+            title: file?.title,
+            synopsis: file?.synopsis,
+            content: file?.content,
+            sceneData: file?.sceneData,
+            genre: projectSettings?.genre
+          }
+        }),
       });
 
       const data = await res.json();
-
       if (!res.ok) {
-        throw new Error(data.error || 'Error al generar respuesta');
+        throw new Error(data.error || 'Error al procesar con IA');
       }
 
       setAiResult(data.result);
@@ -539,11 +550,24 @@ export default function Inspector({
   };
 
 
-  if (!file) return <div className="p-6 text-gray-500 text-sm text-center mt-10">Selecciona un archivo para ver sus detalles</div>;
+  if (!file) return (
+    <div className="p-6 text-gray-500 text-sm text-center mt-10 relative">
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/10 lg:hidden"
+          title="Cerrar"
+        >
+          <X size={18} />
+        </button>
+      )}
+      Selecciona un archivo para ver sus detalles
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-full p-4 text-gray-300 overflow-y-auto">
-      {/* ... (Header matches existing) ... */}
+      {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div className="overflow-hidden">
           <h3 className="font-bold text-lg text-white truncate" title={file.title}>{file.title}</h3>
@@ -552,7 +576,18 @@ export default function Inspector({
             {file.wordCount !== undefined && <span>• {file.wordCount} palabras</span>}
           </div>
         </div>
-        <span className="text-xs bg-white/10 px-2 py-1 rounded uppercase tracking-wider text-gray-400">{file.type}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs bg-white/10 px-2 py-1 rounded uppercase tracking-wider text-gray-400">{file.type}</span>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-white/10 lg:hidden transition-colors"
+              title="Cerrar inspector"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
