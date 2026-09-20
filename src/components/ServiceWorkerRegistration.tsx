@@ -10,10 +10,20 @@ export default function ServiceWorkerRegistration() {
           .register('/sw.js')
           .then((registration) => {
             console.log('Arcano Service Worker registrado con éxito:', registration.scope);
+            // Chequear actualización en cada carga
+            registration.update();
           })
           .catch((error) => {
             console.warn('Fallo al registrar Service Worker:', error);
           });
+
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!refreshing) {
+            refreshing = true;
+            window.location.reload();
+          }
+        });
       });
     }
   }, []);
