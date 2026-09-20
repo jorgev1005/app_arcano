@@ -27,7 +27,7 @@ export async function GET(
 
         const project = await Project.findOne({
             _id: projectId,
-            userId: session.user.id
+            user: session.user.id
         });
 
         if (!project) {
@@ -36,7 +36,7 @@ export async function GET(
 
         // Fetch all files (excluding system folders like Sandbox/Extras for the book)
         const files = await File.find({
-            projectId: projectId,
+            project: projectId,
             isSystem: { $ne: true } // Exclude system folders
         }).sort({ order: 1 });
 

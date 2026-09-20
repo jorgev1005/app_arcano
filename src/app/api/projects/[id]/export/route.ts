@@ -16,10 +16,10 @@ export async function GET(
 
         await dbConnect();
 
-        // 1. Fetch Project
-        const project = await Project.findById(params.id);
+        // 1. Fetch Project ensuring ownership
+        const project = await Project.findOne({ _id: params.id, user: session.user.id });
         if (!project) {
-            return Response.json({ error: 'Proyecto no encontrado' }, { status: 404 });
+            return Response.json({ error: 'Proyecto no encontrado o no autorizado' }, { status: 404 });
         }
 
         // 2. Fetch Files

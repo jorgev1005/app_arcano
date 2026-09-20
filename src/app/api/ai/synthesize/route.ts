@@ -39,7 +39,7 @@ export async function POST(request: Request) {
         }
 
         // Use the same model as the main route
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         console.log('Synthesizing ideas with Gemini...');
         const result = await model.generateContent(fullPrompt);

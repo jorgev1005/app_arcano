@@ -1,5 +1,6 @@
 import dbConnect from '@/lib/mongodb';
 import File from '@/models/File';
+import Project from '@/models/Project';
 import { auth } from '@/auth';
 
 export async function GET(request: Request) {
@@ -13,7 +14,16 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get('projectId');
 
-    // Ideally check if project belongs to user here too, but for now just auth check
+    if (!projectId) {
+      return Response.json({ error: 'Falta projectId' }, { status: 400 });
+    }
+
+    // Validar que el proyecto pertenezca al usuario autenticado
+    const project = await Project.findOne({ _id: projectId, user: session.user.id });
+    if (!project) {
+      return Response.json({ error: 'Proyecto no encontrado o no autorizado' }, { status: 404 });
+    }
+
     const files = await File.find({ project: projectId }).sort({ order: 1, createdAt: 1 });
     return Response.json({ files });
   } catch (error) {
@@ -31,6 +41,17 @@ export async function POST(request: Request) {
 
     await dbConnect();
     const { title, projectId, type, parent, isSystem, status } = await request.json();
+
+    if (!projectId) {
+      return Response.json({ error: 'Falta projectId' }, { status: 400 });
+    }
+
+    // Validar que el proyecto pertenezca al usuario autenticado
+    const project = await Project.findOne({ _id: projectId, user: session.user.id });
+    if (!project) {
+      return Response.json({ error: 'Proyecto no encontrado o no autorizado' }, { status: 404 });
+    }
+
     // Get max order to append to end
     const lastFile = await File.findOne({ project: projectId }).sort({ order: -1 });
     const order = lastFile ? lastFile.order + 1 : 0;
@@ -55,6 +76,21 @@ export async function PUT(request: Request) {
     const body = await request.json();
 
     if (Array.isArray(body)) {
+      if (body.length === 0) {
+        return Response.json({ success: true });
+      }
+
+      // Validar que el archivo pertenezca a un proyecto del usuario
+      const sampleFile = await File.findById(body[0]._id);
+      if (!sampleFile) {
+        return Response.json({ error: 'Archivo no encontrado' }, { status: 404 });
+      }
+
+      const project = await Project.findOne({ _id: sampleFile.project, user: session.user.id });
+      if (!project) {
+        return Response.json({ error: 'No autorizado' }, { status: 403 });
+      }
+
       // Batch update for reordering
       const updates = body.map((file: any, index: number) => {
         const updateDoc: any = { order: index }; // Always sync order
@@ -63,7 +99,7 @@ export async function PUT(request: Request) {
 
         return {
           updateOne: {
-            filter: { _id: file._id },
+            filter: { _id: file._id, project: sampleFile.project },
             update: { $set: updateDoc }
           }
         };

@@ -1,5 +1,6 @@
 import dbConnect from '@/lib/mongodb';
 import Project from '@/models/Project';
+import File from '@/models/File';
 import { auth } from '@/auth';
 
 export async function GET(request: Request) {
@@ -35,6 +36,27 @@ export async function POST(request: Request) {
       coverImage
     });
     await project.save();
+
+    // Crear carpetas de sistema por defecto para el proyecto
+    await File.create([
+      {
+        title: 'Extras',
+        project: project._id,
+        type: 'folder',
+        parent: null,
+        isSystem: true,
+        order: 998
+      },
+      {
+        title: 'Sandbox',
+        project: project._id,
+        type: 'folder',
+        parent: null,
+        isSystem: true,
+        order: 999
+      }
+    ]);
+
     return Response.json({ project });
   } catch (error) {
     console.error('Error creating project:', error);

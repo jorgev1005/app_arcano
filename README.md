@@ -10,8 +10,9 @@ Arcano es una herramienta de escritura basada en web, inspirada en Scrivener, di
 - **Corcho**: Vista visual basada en tarjetas de escenas.
 - **Esquema**: Vista de tabla con estado y conteos de palabras.
 - **Inspector**: Notas, sinopsis, metadatos y herramientas de IA para cada archivo.
-- **Asistencia de IA**: Genera personajes, ambientes e ideas de trama usando OpenAI.
-- **Exportación**: Compila proyectos a PDF.
+- **Asistencia de IA**: Genera personajes, ambientes, análisis narrativo y síntesis de ideas usando Google Gemini.
+- **Visualizaciones Avanzadas**: Corcho Libre (Canvas), Grafo de Relaciones y Análisis de Ritmo Literario.
+- **Exportación Versátil**: eBook (.epub / Kindle), Vista Previa de Impresión/PDF y Copia de Seguridad Completa (.json).
 
 ## Configuración
 
@@ -19,17 +20,19 @@ Arcano es una herramienta de escritura basada en web, inspirada en Scrivener, di
 2. Instala dependencias: `npm install`
 3. Configura variables de entorno en `.env.local`:
    - `MONGODB_URI`: Tu cadena de conexión de MongoDB.
-   - `OPENAI_API_KEY`: Tu clave de API de OpenAI.
+   - `AUTH_SECRET`: Secreto para firma de sesiones NextAuth v5.
+   - `GOOGLE_API_KEY`: Tu clave de API de Google Gemini.
+   - `INVITE_CODE`: Código de registro para escritores invitados.
 4. Ejecuta el servidor de desarrollo: `npm run dev`
 
 ## Despliegue
 
-Despliega en Vercel o tu plataforma de nube preferida. Usa MongoDB Atlas para la base de datos.
+Despliega en Vercel conectado a MongoDB en tu VPS o MongoDB Atlas.
 
 ## Uso
 
-- Crea un proyecto.
-- Agrega archivos y carpetas en el Enlazador.
-- Escribe en el Editor, cambia a vistas de Corcho o Esquema.
-- Usa el Inspector para notas y generación de IA.
-- Exporta tu proyecto cuando esté listo.
+- Crea un proyecto o importa una copia de seguridad.
+- Agrega archivos y carpetas en el Enlazador (Binder).
+- Escribe en el Editor y consulta el ritmo narrativo y grafo de personajes.
+- Usa el Inspector para notas, sinopsis y generación asistida por Gemini.
+- Exporta tu proyecto en eBook (.epub) o imprime directamente.

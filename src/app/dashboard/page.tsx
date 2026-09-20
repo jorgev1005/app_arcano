@@ -51,11 +51,6 @@ export default function Dashboard() {
             setIsSidebarOpen(true);
         }
 
-        // 1. Auto-Zen on Phone
-        if (window.innerWidth < 768) {
-            setIsZenMode(true);
-        }
-
         // 2. Restore Project Session (Delay slightly to ensure auth loaded if needed, but here is fine)
         const lastProjectId = localStorage.getItem('arcano_last_project');
         if (lastProjectId) {
@@ -199,7 +194,7 @@ export default function Dashboard() {
         }
 
         // Check/Create "Extras" folder (System Folder)
-        const extrasFolder = data.files.find(f => f.isSystem);
+        const extrasFolder = data.files.find(f => f.isSystem && f.title === 'Extras');
         if (!extrasFolder) {
             // Auto-create
             try {
@@ -248,8 +243,15 @@ export default function Dashboard() {
         // If we restored a file, select it now (after setting files)
         if (storedFile) {
             setCurrentFile(storedFile);
+            if (window.innerWidth < 1024) {
+                setIsSidebarOpen(false);
+            }
         } else {
             setCurrentFile(null);
+            // En móvil, si no hay archivo abierto, abrir el Binder para que el usuario elija
+            if (window.innerWidth < 1024) {
+                setIsSidebarOpen(true);
+            }
         }
         setView('editor');
     };
@@ -282,6 +284,9 @@ export default function Dashboard() {
             // Only select if it's a file, not a folder
             if (type === 'file') {
                 setCurrentFile(data.file);
+                if (window.innerWidth < 1024) {
+                    setIsSidebarOpen(false);
+                }
                 setView('editor');
             }
             // Return the created file to caller
@@ -328,6 +333,9 @@ export default function Dashboard() {
         setCurrentFile(file);
         if (currentProject) {
             localStorage.setItem(`arcano_last_file_${currentProject._id}`, file._id); // Save File Session per project
+        }
+        if (window.innerWidth < 1024) {
+            setIsSidebarOpen(false);
         }
         setView('editor');
     };
@@ -401,12 +409,15 @@ export default function Dashboard() {
     return (
         <div className="flex bg-neutral-900 min-h-screen">
             {/* Sidebar Toggle for Mobile */}
-            <button
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-neutral-800 rounded text-white"
-            >
-                {isSidebarOpen ? <X /> : <Menu />}
-            </button>
+            {!isZenMode && (
+                <button
+                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                    className="lg:hidden fixed top-3.5 left-3.5 z-50 p-2.5 bg-neutral-800/90 backdrop-blur border border-white/10 rounded-xl text-white shadow-xl active:scale-95 transition-all"
+                    aria-label={isSidebarOpen ? 'Cerrar menú' : 'Abrir explorador'}
+                >
+                    {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                </button>
+            )}
 
             {/* Mobile Sidebar Overlay */}
             {isSidebarOpen && !isZenMode && (
@@ -600,9 +611,30 @@ export default function Dashboard() {
                                 onStatsUpdate={handleStatsUpdate}
                             />
                         ) : (
-                            <div className="flex bg-neutral-900 flex-col items-center justify-center h-full text-gray-400">
-                                <p className="mb-4 text-lg">Selecciona un archivo para empezar a escribir</p>
-                                <p className="text-sm opacity-60">Usa el botón + del Binder para crear uno nuevo</p>
+                            <div className="flex bg-neutral-900 flex-col items-center justify-center h-full text-gray-400 p-6 text-center">
+                                <div className="p-6 bg-white/5 rounded-3xl border border-white/10 max-w-sm w-full shadow-2xl backdrop-blur-sm">
+                                    <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center mx-auto mb-4 border border-blue-500/20">
+                                        <FileText size={24} />
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-white mb-2">Comienza a escribir</h3>
+                                    <p className="text-sm text-gray-400 mb-6 leading-relaxed">
+                                        Selecciona una escena existente en tu manuscrito o crea una nueva para redactar.
+                                    </p>
+                                    <div className="flex flex-col gap-3">
+                                        <button
+                                            onClick={() => setIsSidebarOpen(true)}
+                                            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-blue-500/20 active:scale-98"
+                                        >
+                                            <Folder size={16} /> Abrir Binder / Explorador
+                                        </button>
+                                        <button
+                                            onClick={() => createFile('Nueva Escena', 'file')}
+                                            className="w-full py-3 px-4 bg-white/10 hover:bg-white/15 border border-white/10 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all active:scale-98"
+                                        >
+                                            <Plus size={16} /> + Crear Nueva Escena
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         )
                     )}

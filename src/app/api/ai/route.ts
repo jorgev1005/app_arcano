@@ -56,11 +56,11 @@ export async function POST(request: Request) {
     }
 
     // Fallback to the most standard model if flash fails
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const fullPrompt = `${systemInstruction}\n\nTexto a analizar: "${prompt}"`;
 
-    console.log('Sending prompt to Gemini (gemini-2.5-flash)...');
+    console.log('Sending prompt to Gemini (gemini-1.5-flash)...');
     const result = await model.generateContent(fullPrompt);
     const response = await result.response;
     let text = response.text();
