@@ -367,15 +367,19 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
   };
 
   return (
-    <div className={`flex flex-col h-full ${darkMode ? 'bg-neutral-900' : 'bg-gray-100'}`}>
+    <div className={`flex flex-col h-full w-full min-w-0 max-w-full overflow-x-hidden ${darkMode ? 'bg-neutral-900' : 'bg-gray-100'}`}>
       <style>{`
         ${darkMode ? `
-          /* ... styles kept same ... */
           .ql-toolbar.ql-snow {
             background-color: #262626; 
             border-color: #404040 !important;
             border-top-left-radius: 0.5rem;
             border-top-right-radius: 0.5rem;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+            overflow-x: auto !important;
           }
           .ql-container.ql-snow {
             background-color: #171717; 
@@ -383,6 +387,23 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
             border-bottom-left-radius: 0.5rem;
             border-bottom-right-radius: 0.5rem;
             color: #d4d4d4; 
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+          }
+          .ql-editor {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+            white-space: pre-wrap !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+            word-break: break-word !important;
+            font-size: 16px !important;
+            line-height: 1.6 !important;
+            padding: 12px 14px !important;
           }
           .ql-editor.ql-blank::before {
             color: #737373; 
@@ -402,21 +423,43 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
             border-color: #e2e8f0 !important;
             border-top-left-radius: 0.5rem;
             border-top-right-radius: 0.5rem;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+            overflow-x: auto !important;
           }
           .ql-container.ql-snow {
             background-color: #ffffff;
             border-color: #e2e8f0 !important;
             border-bottom-left-radius: 0.5rem;
             border-bottom-right-radius: 0.5rem;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+          }
+          .ql-editor {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+            white-space: pre-wrap !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+            word-break: break-word !important;
+            font-size: 16px !important;
+            line-height: 1.6 !important;
+            padding: 12px 14px !important;
           }
         `}
       `}</style>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 min-w-0 w-full max-w-full">
         {/* Toggle & Title Area */}
-        <div className="flex justify-between items-center mb-1 gap-2">
+        <div className="flex flex-wrap sm:flex-nowrap justify-between items-center mb-2 gap-2 min-w-0 w-full">
           {/* Word Count & Save status */}
-          <div className="flex items-center gap-2 ml-1">
+          <div className="flex items-center gap-2 ml-1 shrink-0">
             <div className="text-sm text-gray-400 font-mono">
               {wordCount} palabras
             </div>
@@ -431,8 +474,8 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
           </div>
 
           {/* View Mode Toggles */}
-          <div className="flex justify-end gap-2">
-            <div className="flex bg-white/5 rounded-full p-1 border border-white/10">
+          <div className="flex items-center justify-end gap-2 shrink-0 overflow-x-auto no-scrollbar max-w-full">
+            <div className="flex bg-white/5 rounded-full p-1 border border-white/10 shrink-0">
               {/* Speech to Text Button */}
               <button
                 onClick={toggleSpeech}
@@ -473,11 +516,11 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
               </button>
             </div>
 
-            <div className="w-px bg-white/20 mx-1" />
+            <div className="w-px bg-white/20 mx-1 shrink-0" />
 
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className={`p-2 rounded-full transition-colors ${darkMode ? 'bg-white/10 hover:bg-white/20 text-yellow-300' : 'bg-gray-200 hover:bg-gray-300 text-purple-600'}`}
+              className={`p-2 rounded-full transition-colors shrink-0 ${darkMode ? 'bg-white/10 hover:bg-white/20 text-yellow-300' : 'bg-gray-200 hover:bg-gray-300 text-purple-600'}`}
               title={darkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
             >
               {darkMode ? <Sun size={16} /> : <Moon size={16} />}
@@ -485,7 +528,7 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
           </div>
         </div>
 
-        <div className={`${darkMode ? 'bg-transparent' : 'bg-white'} transition-colors rounded-lg h-[calc(100dvh-220px)] min-h-[400px] mb-2 relative`}>
+        <div className={`${darkMode ? 'bg-transparent' : 'bg-white'} transition-colors rounded-lg h-[calc(100dvh-220px)] min-h-[350px] mb-2 relative w-full min-w-0 max-w-full flex flex-col`}>
           {viewMode === 'edit' ? (
             <ReactQuill
               key={file?._id}
@@ -494,10 +537,10 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
               onChange={handleChange}
               modules={modules}
               theme="snow"
-              className="h-full"
+              className="h-full w-full min-w-0 max-w-full flex-1 flex flex-col"
               preserveWhitespace
             >
-              <div spellCheck={true} className="h-full" />
+              <div spellCheck={true} className="h-full w-full" />
             </ReactQuill>
           ) : viewMode === 'stats' ? (
             <div className={`h-full p-4 overflow-y-auto border rounded-lg ${darkMode ? 'border-neutral-700 bg-neutral-900 text-gray-300' : 'border-gray-200 bg-white text-gray-800'}`}>

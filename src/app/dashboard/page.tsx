@@ -507,7 +507,7 @@ export default function Dashboard() {
     }
 
     return (
-        <div className="flex bg-neutral-900 min-h-screen">
+        <div className="flex bg-neutral-900 min-h-[100dvh] w-full max-w-full overflow-x-hidden">
             {/* Sidebar Toggle for Mobile */}
             {!isZenMode && (
                 <button
@@ -563,46 +563,46 @@ export default function Dashboard() {
             )}
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col relative z-0">
+            <div className="flex-1 min-w-0 w-full max-w-full flex flex-col relative z-0 overflow-x-hidden">
                 {/* ... Header ... */}
                 {!isZenMode && (
-                    <div className="h-14 bg-white/5 backdrop-blur-md border-b border-white/10 flex items-center justify-between px-4">
-                        {/* ... (Header content unchanged) ... */}
-                        <div className="flex gap-2 items-center">
+                    <div className="h-14 bg-white/5 backdrop-blur-md border-b border-white/10 flex items-center justify-between px-2 sm:px-4 min-w-0 w-full max-w-full gap-1 sm:gap-2">
+                        {/* Left Controls */}
+                        <div className="flex gap-1 sm:gap-2 items-center shrink-0">
                             <button
                                 onClick={() => setIsSidebarOpen(true)}
-                                className="p-2 -ml-2 mr-2 md:hidden hover:bg-white/10 rounded-md text-gray-400"
+                                className="p-2 -ml-1 sm:-ml-2 mr-1 sm:mr-2 md:hidden hover:bg-white/10 rounded-md text-gray-400"
                             >
                                 <Menu size={20} />
                             </button>
                             <button
                                 onClick={() => setCurrentProject(null)}
-                                className="p-2 -ml-2 hover:bg-white/10 rounded-md text-gray-400 hover:text-white transition-colors"
+                                className="p-2 hover:bg-white/10 rounded-md text-gray-400 hover:text-white transition-colors"
                                 title="Volver al Inicio (Cerrar Proyecto)"
                             >
                                 <Home size={20} />
                             </button>
                         </div>
 
-                        <div className="flex gap-1 bg-black/20 p-1 rounded-lg">
+                        {/* View Modes Switcher: scrollable horizontally without pushing container */}
+                        <div className="flex gap-1 bg-black/20 p-1 rounded-lg overflow-x-auto no-scrollbar shrink min-w-0 max-w-[42vw] sm:max-w-none">
                             <button
                                 onClick={() => setView('editor')}
-                                className={`p-2 rounded-md transition-all ${view === 'editor' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                className={`p-2 rounded-md transition-all shrink-0 ${view === 'editor' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
                             >
                                 <Layout size={18} />
                             </button>
                             <button
                                 onClick={() => {
                                     setView('corkboard');
-                                    // If no folder selected, maybe default to root? Yes.
                                 }}
-                                className={`p-2 rounded-md transition-all ${view === 'corkboard' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                className={`p-2 rounded-md transition-all shrink-0 ${view === 'corkboard' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
                             >
                                 <Grid size={18} />
                             </button>
                             <button
                                 onClick={() => setView('outliner')}
-                                className={`p-2 rounded-md transition-all ${view === 'outliner' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                className={`p-2 rounded-md transition-all shrink-0 ${view === 'outliner' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
                                 title="Esquema"
                             >
                                 <List size={18} />
@@ -610,50 +610,54 @@ export default function Dashboard() {
 
                             <button
                                 onClick={() => setView('analytics')}
-                                className={`p-2 rounded-md transition-all ${view === 'analytics' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                className={`p-2 rounded-md transition-all shrink-0 ${view === 'analytics' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
                                 title="Análisis Narrativo"
                             >
                                 <BarChart3 size={18} />
                             </button>
                             <button
                                 onClick={() => setView('timeline')}
-                                className={`p-2 rounded-md transition-all ${view === 'timeline' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                className={`p-2 rounded-md transition-all shrink-0 ${view === 'timeline' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
                                 title="Línea de Tiempo"
                             >
                                 <CalendarClock size={18} />
                             </button>
                             <button
                                 onClick={() => setView('canvas')}
-                                className={`p-2 rounded-md transition-all ${view === 'canvas' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                className={`p-2 rounded-md transition-all shrink-0 ${view === 'canvas' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
                                 title="Corcho Libre (Canvas)"
                             >
                                 <Maximize size={18} />
                             </button>
                             <button
                                 onClick={() => setView('sandbox')}
-                                className={`p-2 rounded-md transition-all ${view === 'sandbox' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                className={`p-2 rounded-md transition-all shrink-0 ${view === 'sandbox' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
                                 title="Caja de Arena (Sandbox)"
                             >
                                 <Box size={18} />
                             </button>
                             <button
                                 onClick={() => setView('graph')}
-                                className={`p-2 rounded-md transition-all ${view === 'graph' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                className={`p-2 rounded-md transition-all shrink-0 ${view === 'graph' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
                                 title="Grafo de Relaciones"
                             >
                                 <Network size={18} />
                             </button>
                         </div>
-                        {/* ... Right side header ... */}
-                        <div className="flex items-center gap-3">
-                            <OfflineIndicator />
-                            {/* Add Goal Widget Here if project exists */}
-                            {currentProject && <GoalWidget project={currentProject} />}
 
-                            <div className="text-xs font-mono text-gray-500 bg-black/20 px-2 py-1 rounded border border-white/5" title="Total del Proyecto">
+                        {/* Right side header: responsive items */}
+                        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+                            <OfflineIndicator />
+                            {currentProject && (
+                                <div className="hidden lg:block">
+                                    <GoalWidget project={currentProject} />
+                                </div>
+                            )}
+
+                            <div className="hidden md:block text-xs font-mono text-gray-500 bg-black/20 px-2 py-1 rounded border border-white/5" title="Total del Proyecto">
                                 {files.reduce((acc, f) => acc + (f.wordCount || 0), 0).toLocaleString()} palabras
                             </div>
-                            <div className="text-sm font-medium text-gray-400">
+                            <div className="hidden xl:block text-sm font-medium text-gray-400 max-w-[160px] truncate">
                                 {currentProject?.title} / {currentFile?.title || (selectedFolder ? files.find(f => f._id === selectedFolder)?.title : 'Raíz')}
                             </div>
                             <button
@@ -665,12 +669,12 @@ export default function Dashboard() {
                             </button>
                             <button
                                 onClick={() => setIsFeedbackOpen(true)}
-                                className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                                className="hidden sm:block p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
                                 title="Enviar Comentarios / Reportar Error"
                             >
                                 <HelpCircle size={18} />
                             </button>
-                            <div className="h-6 w-px bg-white/10 mx-2" />
+                            <div className="hidden sm:block h-6 w-px bg-white/10 mx-1" />
                             <button
                                 onClick={() => setIsZenMode(true)}
                                 className="p-2 rounded-md text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-colors"
@@ -690,7 +694,7 @@ export default function Dashboard() {
                 )}
 
                 {/* Workspace */}
-                <div className="flex-1 overflow-hidden relative">
+                <div className="flex-1 min-w-0 w-full max-w-full overflow-hidden relative flex flex-col">
                     {/* Zen Mode Exit Button */}
                     {isZenMode && (
                         <button
