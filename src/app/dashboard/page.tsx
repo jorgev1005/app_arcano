@@ -17,6 +17,9 @@ import WelcomeScreen from '@/components/WelcomeScreen';
 import GraphView from '@/components/GraphView';
 import PacingGraph from '@/components/PacingGraph';
 import { Project, FileNode } from '@/types/models';
+import { offlineDb } from '@/lib/offlineDb';
+import { syncManager } from '@/lib/syncManager';
+import OfflineIndicator from '@/components/OfflineIndicator';
 import {
     Layout, Grid, FileText, Menu, Settings, X, Search, Plus,
     Share2, Folder, ChevronRight, ChevronDown, MoreVertical,
@@ -75,16 +78,33 @@ export default function Dashboard() {
             if (!res.ok) throw new Error('Error al cargar proyectos');
             const data: { projects: Project[] } = await res.json();
             setProjects(data.projects);
-            // Don't auto-select. Let user choose from Welcome Screen.
-            // if (data.projects.length > 0 && !currentProject) {
-            //     selectProject(data.projects[0]);
-            // }
+            // Respaldar en IndexedDB para disponibilidad sin conexión
+            await offlineDb.saveProjects(data.projects);
         } catch (error) {
-            console.error('Error fetching projects:', error);
+            console.warn('Conexión con servidor fallida, cargando proyectos desde IndexedDB:', error);
+            const cached = await offlineDb.getProjects();
+            if (cached && cached.length > 0) {
+                setProjects(cached);
+            }
         }
     };
 
     const createProject = async (title: string, description?: string, settings?: any, coverImage?: string) => {
+        const tempId = 'temp_proj_' + Date.now();
+        const newProj: Project = {
+            _id: tempId,
+            title,
+            description: description || '',
+            settings,
+            coverImage,
+            createdAt: new Date().toISOString()
+        };
+
+        // Guardado optimista en estado y en IndexedDB
+        setProjects(prev => [...prev, newProj]);
+        selectProject(newProj);
+        await offlineDb.saveSingleProject(newProj);
+
         try {
             const res = await fetch('/api/projects', {
                 method: 'POST',
@@ -95,10 +115,20 @@ export default function Dashboard() {
             if (!res.ok) throw new Error('Error al crear proyecto');
 
             const data = await res.json();
-            setProjects([...projects, data.project]);
-            selectProject(data.project);
+            setProjects(prev => prev.map(p => p._id === tempId ? data.project : p));
+            if (currentProject?._id === tempId) {
+                setCurrentProject(data.project);
+            }
+            await offlineDb.deleteProject(tempId);
+            await offlineDb.saveSingleProject(data.project);
         } catch (error) {
-            console.error('Error creating project:', error);
+            console.warn('Modo Offline: Encolando creación de proyecto', error);
+            await offlineDb.enqueueMutation({
+                type: 'create_project',
+                entityId: tempId,
+                payload: { title, description: description || '', settings, coverImage }
+            });
+            syncManager.refreshPendingCount();
         }
     };
 
@@ -108,6 +138,12 @@ export default function Dashboard() {
             setCurrentProject(prev => prev ? { ...prev, ...updates } : null);
         }
         setProjects(prev => prev.map(p => p._id === projectId ? { ...p, ...updates } : p));
+
+        // Guardar localmente de inmediato
+        const target = projects.find(p => p._id === projectId);
+        if (target) {
+            await offlineDb.saveSingleProject({ ...target, ...updates });
+        }
 
         try {
             const res = await fetch(`/api/projects/${projectId}`, {
@@ -123,9 +159,16 @@ export default function Dashboard() {
             }
 
             const data = await res.json();
-            setCurrentProject(data.project); // Update current project fully
+            setCurrentProject(data.project);
+            await offlineDb.saveSingleProject(data.project);
         } catch (error) {
-            console.error('Error updating project:', error);
+            console.warn('Modo Offline: Encolando actualización de proyecto', error);
+            await offlineDb.enqueueMutation({
+                type: 'update_project',
+                entityId: projectId,
+                payload: updates
+            });
+            syncManager.refreshPendingCount();
         }
     };
 
@@ -158,20 +201,25 @@ export default function Dashboard() {
 
 
     const deleteProject = async (projectId: string) => {
+        setProjects(prev => prev.filter(p => p._id !== projectId));
+        if (currentProject?._id === projectId) {
+            setCurrentProject(null);
+        }
+        await offlineDb.deleteProject(projectId);
+
         try {
             const res = await fetch(`/api/projects/${projectId}`, {
                 method: 'DELETE',
             });
-
-            if (!res.ok) throw new Error('Error al eliminar proyecto');
-
-            setProjects(prev => prev.filter(p => p._id !== projectId));
-            if (currentProject?._id === projectId) {
-                setCurrentProject(null);
-            }
+            if (!res.ok) throw new Error('Error al eliminar proyecto en servidor');
         } catch (error) {
-            console.error('Error deleting project:', error);
-            alert('Error al eliminar el proyecto');
+            console.warn('Modo Offline: Encolando eliminación de proyecto', error);
+            await offlineDb.enqueueMutation({
+                type: 'delete_project',
+                entityId: projectId,
+                payload: {}
+            });
+            syncManager.refreshPendingCount();
         }
     };
 
@@ -179,24 +227,32 @@ export default function Dashboard() {
         setCurrentProject(project);
         localStorage.setItem('arcano_last_project', project._id); // Save Session
 
-        const res = await fetch(`/api/files?projectId=${project._id}`);
-        if (!res.ok) {
-            console.error('Error al cargar archivos del proyecto');
-            return;
+        let filesList: FileNode[] = [];
+        try {
+            const res = await fetch(`/api/files?projectId=${project._id}`);
+            if (res.ok) {
+                const data: { files: FileNode[] } = await res.json();
+                filesList = data.files;
+                // Guardar en IndexedDB para disponibilidad offline
+                await offlineDb.saveFiles(filesList, project._id);
+            } else {
+                throw new Error('Respuesta fallida del servidor');
+            }
+        } catch (e) {
+            console.warn('Modo Offline: Cargando archivos desde IndexedDB local', e);
+            filesList = await offlineDb.getFilesByProject(project._id);
         }
-        const data: { files: FileNode[] } = await res.json();
 
         // Restore Last File for this project
         const lastFileId = localStorage.getItem(`arcano_last_file_${project._id}`);
         let storedFile = null;
         if (lastFileId) {
-            storedFile = data.files.find(f => f._id === lastFileId);
+            storedFile = filesList.find(f => f._id === lastFileId);
         }
 
-        // Check/Create "Extras" folder (System Folder)
-        const extrasFolder = data.files.find(f => f.isSystem && f.title === 'Extras');
-        if (!extrasFolder) {
-            // Auto-create
+        // Check/Create "Extras" folder if connected
+        const extrasFolder = filesList.find(f => f.isSystem && f.title === 'Extras');
+        if (!extrasFolder && syncManager.isOnline) {
             try {
                 const createRes = await fetch('/api/files', {
                     method: 'POST',
@@ -206,19 +262,20 @@ export default function Dashboard() {
                         projectId: project._id,
                         type: 'folder',
                         parent: null,
-                        isSystem: true // Protected
+                        isSystem: true
                     }),
                 });
                 if (createRes.ok) {
                     const newData = await createRes.json();
-                    data.files.push(newData.file);
+                    filesList.push(newData.file);
+                    await offlineDb.saveSingleFile(newData.file, project._id);
                 }
             } catch (e) { console.error("Error creating Extras folder", e); }
         }
 
-        // Check/Create "Sandbox" folder (System Folder)
-        const sandboxFolder = data.files.find(f => f.isSystem && f.title === 'Sandbox');
-        if (!sandboxFolder) {
+        // Check/Create "Sandbox" folder if connected
+        const sandboxFolder = filesList.find(f => f.isSystem && f.title === 'Sandbox');
+        if (!sandboxFolder && syncManager.isOnline) {
             try {
                 const createRes = await fetch('/api/files', {
                     method: 'POST',
@@ -228,17 +285,18 @@ export default function Dashboard() {
                         projectId: project._id,
                         type: 'folder',
                         parent: null,
-                        isSystem: true // Protected
+                        isSystem: true
                     }),
                 });
                 if (createRes.ok) {
                     const newData = await createRes.json();
-                    data.files.push(newData.file);
+                    filesList.push(newData.file);
+                    await offlineDb.saveSingleFile(newData.file, project._id);
                 }
             } catch (e) { console.error("Error creating Sandbox folder", e); }
         }
 
-        setFiles(data.files);
+        setFiles(filesList);
 
         // If we restored a file, select it now (after setting files)
         if (storedFile) {
@@ -256,13 +314,37 @@ export default function Dashboard() {
         setView('editor');
     };
 
-
-
     const createFile = async (title: string, type: string = 'file', parentId: string | null = null) => {
         if (!currentProject) {
             alert('Primero selecciona un proyecto de la lista.');
             return;
         }
+
+        const tempId = 'temp_file_' + Date.now();
+        const newFileDoc: FileNode = {
+            _id: tempId,
+            title,
+            type: type as any,
+            parent: parentId,
+            content: '',
+            order: files.length,
+            status: 'draft',
+            wordCount: 0
+        };
+
+        const newFiles = [...files, newFileDoc];
+        setFiles(newFiles);
+        await offlineDb.saveSingleFile(newFileDoc, currentProject._id);
+
+        // Only select if it's a file, not a folder
+        if (type === 'file') {
+            setCurrentFile(newFileDoc);
+            if (window.innerWidth < 1024) {
+                setIsSidebarOpen(false);
+            }
+            setView('editor');
+        }
+
         try {
             const res = await fetch('/api/files', {
                 method: 'POST',
@@ -278,34 +360,45 @@ export default function Dashboard() {
             if (!res.ok) throw new Error('Error al crear archivo');
 
             const data = await res.json();
-            const newFiles = [...files, data.file];
-            setFiles(newFiles);
-
-            // Only select if it's a file, not a folder
-            if (type === 'file') {
+            setFiles(prev => prev.map(f => f._id === tempId ? data.file : f));
+            if (currentFile?._id === tempId) {
                 setCurrentFile(data.file);
-                if (window.innerWidth < 1024) {
-                    setIsSidebarOpen(false);
-                }
-                setView('editor');
             }
-            // Return the created file to caller
+            await offlineDb.deleteSingleFile(tempId);
+            await offlineDb.saveSingleFile(data.file, currentProject._id);
             return data.file;
         } catch (error) {
-            console.error('Error creating file:', error);
-            alert('Error al crear el elemento');
-            throw error;
+            console.warn('Modo Offline: Creación de archivo encolada', error);
+            await offlineDb.enqueueMutation({
+                type: 'create_file',
+                entityId: tempId,
+                projectId: currentProject._id,
+                payload: {
+                    title,
+                    projectId: currentProject._id,
+                    type,
+                    parent: parentId
+                }
+            });
+            syncManager.refreshPendingCount();
+            return newFileDoc;
         }
     };
 
     const updateFile = async (fileId: string, updates: any) => {
-        // Optimistic Update
         const previousFiles = files;
         const previousCurrentFile = currentFile;
 
-        setFiles(prevFiles => prevFiles.map(f => f._id === fileId ? { ...f, ...updates } : f));
+        const updatedFiles = files.map(f => f._id === fileId ? { ...f, ...updates } : f);
+        setFiles(updatedFiles);
         if (currentFile?._id === fileId) {
             setCurrentFile(prev => prev ? { ...prev, ...updates } : null);
+        }
+
+        // Guardado local inmediato en IndexedDB (cero latencia)
+        const target = updatedFiles.find(f => f._id === fileId);
+        if (target && currentProject) {
+            await offlineDb.saveSingleFile(target, currentProject._id);
         }
 
         try {
@@ -315,17 +408,16 @@ export default function Dashboard() {
                 body: JSON.stringify(updates),
             });
 
-            if (!res.ok) throw new Error('Error al actualizar archivo');
-
-            // Optional: Confirm with server data if needed, but usually optimistic is fine.
-            // const data = await res.json(); 
-            // setFiles(...) // Only if we expect server transformations
+            if (!res.ok) throw new Error('Error al actualizar archivo en servidor');
         } catch (error) {
-            console.error('Error updating file:', error);
-            // Revert on error
-            setFiles(previousFiles);
-            setCurrentFile(previousCurrentFile);
-            alert('Error al actualizar: cambios revertidos');
+            console.warn('Modo Offline: Actualización de archivo encolada', error);
+            await offlineDb.enqueueMutation({
+                type: 'update_file',
+                entityId: fileId,
+                projectId: currentProject?._id,
+                payload: updates
+            });
+            syncManager.refreshPendingCount();
         }
     };
 
@@ -342,6 +434,9 @@ export default function Dashboard() {
 
     const onReorder = async (newFiles: FileNode[]) => {
         setFiles(newFiles);
+        if (currentProject) {
+            await offlineDb.saveFiles(newFiles, currentProject._id);
+        }
         try {
             await fetch('/api/files', {
                 method: 'PUT',
@@ -349,26 +444,31 @@ export default function Dashboard() {
                 body: JSON.stringify(newFiles),
             });
         } catch (error) {
-            console.error('Error saving order:', error);
+            console.warn('Modo Offline: Orden de archivos guardado localmente');
         }
     };
 
     const deleteFile = async (fileId: string) => {
+        setFiles(prev => prev.filter(f => f._id !== fileId));
+        if (currentFile?._id === fileId) {
+            setCurrentFile(null);
+            setView('editor');
+        }
+        await offlineDb.deleteSingleFile(fileId);
+
         try {
             const res = await fetch(`/api/files/${fileId}`, {
                 method: 'DELETE',
             });
-
-            if (!res.ok) throw new Error('Error al eliminar');
-
-            setFiles(prev => prev.filter(f => f._id !== fileId));
-            if (currentFile?._id === fileId) {
-                setCurrentFile(null);
-                setView('editor');
-            }
+            if (!res.ok) throw new Error('Error al eliminar archivo');
         } catch (error) {
-            console.error('Error deleting file:', error);
-            alert('Error al eliminar archivo');
+            console.warn('Modo Offline: Eliminación de archivo encolada', error);
+            await offlineDb.enqueueMutation({
+                type: 'delete_file',
+                entityId: fileId,
+                payload: {}
+            });
+            syncManager.refreshPendingCount();
         }
     };
 
@@ -545,7 +645,8 @@ export default function Dashboard() {
                             </button>
                         </div>
                         {/* ... Right side header ... */}
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3">
+                            <OfflineIndicator />
                             {/* Add Goal Widget Here if project exists */}
                             {currentProject && <GoalWidget project={currentProject} />}
 

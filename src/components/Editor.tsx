@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { Paperclip, X, Moon, Sun, Eye, FileText, Hash, Mic, MicOff, BarChart } from 'lucide-react';
+import { offlineDb } from '@/lib/offlineDb';
+import { syncManager } from '@/lib/syncManager';
 
 interface EditorProps {
   file: any;
@@ -102,31 +104,32 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
         // ...
       }
 
-      // Check for OFFline Backup
+      // Check for IndexedDB offline draft
+      offlineDb.getSingleFile(file._id).then(localFile => {
+        if (localFile && localFile.content && localFile.content !== file.content) {
+          console.log('[Editor] Restaurando versión más reciente desde IndexedDB');
+          setContent(localFile.content);
+        }
+      }).catch(e => console.warn('Error reading local file:', e));
+
+      // Check for Legacy offline Backup
       const offlineBackup = localStorage.getItem(`offline_bk_${file._id}`);
       if (offlineBackup) {
         try {
           const bk = JSON.parse(offlineBackup);
-          // Simple conflict resolution: Check timestamp or just ask/overwrite. 
-          // For now, if local exists, we assume it's newer/unsynced and use it, alerting user.
-          // Ideally we check dates. Here we just set it.
-          setContent(bk.content || '');
-          if (bk.content !== file.content) {
-            // Alert user subtly or just mark as unsaved
-            console.log("Restored offline backup");
-            setSaveStatus('unsaved'); // Mark unsaved to trigger sync attempt eventually
+          if (bk.content && bk.content !== file.content) {
+            setContent(bk.content);
           }
-          setAttachments(file.attachments || []); // Attachments logic usually server side, keep server
-        } catch (e) {
-          setContent(file.content || '');
-        }
+        } catch (e) {}
+      } else if (!file.content) {
+        setContent('');
       } else {
-        setContent(file.content || '');
+        setContent(file.content);
       }
 
       setAttachments(file.attachments || []);
       lastFileIdRef.current = file._id;
-      if (!offlineBackup) setSaveStatus('saved');
+      setSaveStatus('saved');
 
       // Initialize Delta Tracking
       const initialCount = countWords(file.content || '');
@@ -217,16 +220,25 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
   const saveContent = async () => {
     if (file) {
       setSaveStatus('saving');
+      const autoLinks = checkAutoLinks(content, variables, file);
+      const payload = {
+        content,
+        attachments,
+        wordCount,
+        ...autoLinks
+      };
+
+      // 1. Guardado local inmediato en IndexedDB (cero latencia)
+      await offlineDb.saveSingleFile({
+        ...file,
+        ...payload
+      }, projectId);
+
       try {
         const res = await fetch(`/api/files/${file._id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content,
-            attachments,
-            wordCount,
-            ...checkAutoLinks(content, variables, file) // Merge links/sceneData updates
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (res.ok) {
@@ -239,7 +251,6 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
           const delta = currentCount - lastSavedWordCountRef.current;
 
           if (delta !== 0 && projectId) {
-            console.log('Sending goal delta:', delta);
             fetch(`/api/projects/${projectId}/goals`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -251,26 +262,23 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
                   onStatsUpdate(data.newTotal);
                 }
               })
-              .catch(err => console.error('Error updating goals:', err));
+              .catch(err => console.warn('Goal update skipped offline:', err));
 
             lastSavedWordCountRef.current = currentCount;
           }
-
         } else {
-          setSaveStatus('unsaved');
-          alert('Error al guardar automáticamente');
+          throw new Error('Error al responder el servidor');
         }
       } catch (error) {
-        console.error('Error saving:', error);
-        // OFFLINE FALLBACK
-        try {
-          localStorage.setItem(`offline_bk_${file._id}`, JSON.stringify({
-            content,
-            timestamp: Date.now()
-          }));
-          setSaveStatus('unsaved'); // Technically 'saved locally' but 'unsaved' to server.
-          // visual hint could be improved
-        } catch (e) { console.error("Local storage full", e) }
+        console.warn('Modo Offline: Guardado localmente en IndexedDB. Encolando para sincronización.', error);
+        await offlineDb.enqueueMutation({
+          type: 'update_file',
+          entityId: file._id,
+          projectId,
+          payload
+        });
+        syncManager.refreshPendingCount();
+        setSaveStatus('saved');
       }
     }
   };
@@ -407,9 +415,19 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
       <div className="flex-1 overflow-y-auto p-4">
         {/* Toggle & Title Area */}
         <div className="flex justify-between items-center mb-1 gap-2">
-          {/* Word Count (Now on the left) */}
-          <div className="text-sm text-gray-400 font-mono ml-1">
-            {wordCount} palabras
+          {/* Word Count & Save status */}
+          <div className="flex items-center gap-2 ml-1">
+            <div className="text-sm text-gray-400 font-mono">
+              {wordCount} palabras
+            </div>
+            {saveStatus === 'saving' && (
+              <span className="text-xs text-blue-400 animate-pulse font-sans">Guardando...</span>
+            )}
+            {saveStatus === 'saved' && (
+              <span className="text-[11px] text-gray-500 font-sans">
+                {syncManager.isOnline ? 'Guardado' : 'Guardado localmente'}
+              </span>
+            )}
           </div>
 
           {/* View Mode Toggles */}
