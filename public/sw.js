@@ -1,4 +1,4 @@
-const CACHE_NAME = 'arcano-pwa-v2';
+const CACHE_NAME = 'arcano-pwa-v3';
 const STATIC_ASSETS = [
   '/',
   '/dashboard',

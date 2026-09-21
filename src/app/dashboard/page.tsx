@@ -664,10 +664,11 @@ export default function Dashboard() {
                             {/* Inspector mobile toggle button */}
                             <button
                                 onClick={() => setIsInspectorOpen(!isInspectorOpen)}
-                                className={`lg:hidden p-2 rounded-md transition-colors ${isInspectorOpen ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+                                className={`lg:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${isInspectorOpen ? 'bg-blue-600 text-white' : 'bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30'}`}
                                 title="Inspector de Escena (Detalles, Tiempo, Análisis)"
                             >
-                                <SlidersHorizontal size={18} />
+                                <SlidersHorizontal size={14} />
+                                <span>Detalles</span>
                             </button>
                             <button
                                 onClick={() => setShowSettings(true)}
@@ -686,14 +687,14 @@ export default function Dashboard() {
                             <div className="hidden sm:block h-6 w-px bg-white/10 mx-1" />
                             <button
                                 onClick={() => setIsZenMode(true)}
-                                className="p-2 rounded-md text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-colors"
+                                className="hidden sm:block p-2 rounded-md text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 transition-colors"
                                 title="Modo Zen (Pantalla Completa)"
                             >
                                 <Maximize2 size={18} />
                             </button>
                             <button
                                 onClick={() => signOut({ callbackUrl: '/login' })}
-                                className="p-2 rounded-md text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                                className="hidden sm:block p-2 rounded-md text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
                                 title="Cerrar Sesión"
                             >
                                 <LogOut size={18} />
@@ -723,6 +724,7 @@ export default function Dashboard() {
                                 variables={currentProject?.variables}
                                 projectId={currentProject?._id}
                                 onStatsUpdate={handleStatsUpdate}
+                                onOpenInspector={() => setIsInspectorOpen(true)}
                             />
                         ) : (
                             <div className="flex bg-neutral-900 flex-col items-center justify-center h-full text-gray-400 p-6 text-center">
@@ -833,6 +835,18 @@ export default function Dashboard() {
                     )}
                 </div>
             </div>
+
+            {/* Floating Inspector FAB on Mobile */}
+            {currentFile && !isInspectorOpen && !isZenMode && (
+                <button
+                    onClick={() => setIsInspectorOpen(true)}
+                    className="lg:hidden fixed bottom-5 right-5 z-40 flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-semibold text-sm rounded-full shadow-2xl shadow-blue-600/60 border border-white/20 transition-all cursor-pointer"
+                    title="Ver Ficha y Detalles de la Escena"
+                >
+                    <SlidersHorizontal size={16} />
+                    <span>Ficha de Escena</span>
+                </button>
+            )}
 
             {/* Mobile Inspector Backdrop Overlay */}
             {isInspectorOpen && !isZenMode && (

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
-import { Paperclip, X, Moon, Sun, Eye, FileText, Hash, Mic, MicOff, BarChart } from 'lucide-react';
+import { Paperclip, X, Moon, Sun, Eye, FileText, Hash, Mic, MicOff, BarChart, SlidersHorizontal } from 'lucide-react';
 import { offlineDb } from '@/lib/offlineDb';
 import { syncManager } from '@/lib/syncManager';
 
@@ -13,6 +13,7 @@ interface EditorProps {
   variables?: { key: string; value: string }[];
   projectId?: string; // New Prop
   onStatsUpdate?: (newTotal: number) => void;
+  onOpenInspector?: () => void;
 }
 
 // Helper to check and auto-link entities
@@ -61,7 +62,7 @@ const checkAutoLinks = (content: string, variables: { key: string; entityId?: st
   return null;
 };
 
-export default function Editor({ file, onSave, variables = [], projectId, onStatsUpdate }: EditorProps) {
+export default function Editor({ file, onSave, variables = [], projectId, onStatsUpdate, onOpenInspector }: EditorProps) {
   const [content, setContent] = useState(file?.content || '');
   const [attachments, setAttachments] = useState<any[]>([]);
   const [darkMode, setDarkMode] = useState(true);
@@ -470,6 +471,16 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
               <span className="text-[11px] text-gray-500 font-sans">
                 {syncManager.isOnline ? 'Guardado' : 'Guardado localmente'}
               </span>
+            )}
+            {onOpenInspector && (
+              <button
+                onClick={onOpenInspector}
+                className="lg:hidden ml-1 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 text-xs font-semibold shadow-sm transition-all"
+                title="Abrir Ficha de Detalles de la Escena"
+              >
+                <SlidersHorizontal size={13} />
+                <span>Detalles</span>
+              </button>
             )}
           </div>
 
