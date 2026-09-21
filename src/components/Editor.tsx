@@ -82,7 +82,9 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
   const lastSavedWordCountRef = useRef(0); // Track for Delta
 
   const [isListening, setIsListening] = useState(false);
+  const isListeningRef = useRef(false);
   const recognitionRef = useRef<any>(null);
+  const lastInsertedRef = useRef<string>('');
 
   // Sync refs with state
   useEffect(() => { contentRef.current = content; }, [content]);
@@ -156,8 +158,14 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
 
   const toggleSpeech = () => {
     if (isListening) {
-      if (recognitionRef.current) recognitionRef.current.stop();
+      isListeningRef.current = false;
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
       setIsListening(false);
+      lastInsertedRef.current = '';
       return;
     }
 
@@ -171,41 +179,93 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
     recognitionRef.current = recognition;
 
     recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.interimResults = false; // Solo resultados finales consolidados para evitar duplicaciones
     recognition.lang = 'es-ES';
 
-    recognition.onstart = () => setIsListening(true);
+    lastInsertedRef.current = '';
+    isListeningRef.current = true;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      isListeningRef.current = true;
+    };
 
     recognition.onresult = (event: any) => {
-      let finalTranscript = '';
+      let rawTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
+          rawTranscript += event.results[i][0].transcript;
         }
       }
 
-      if (finalTranscript) {
-        const editor = quillRef.current?.getEditor();
-        const cursor = editor?.getSelection()?.index || editor?.getLength() || 0;
-        editor?.insertText(cursor, finalTranscript + ' ');
+      let newTranscript = rawTranscript.trim();
+      if (!newTranscript) return;
+
+      // 1. Si la frase es exactamente idéntica a la anterior (bug recurrente de Android Chrome), omitir
+      if (newTranscript.toLowerCase() === lastInsertedRef.current.toLowerCase()) {
+        return;
+      }
+
+      // 2. Si en Android el reconocimiento devuelve texto acumulativo ("Quiero", luego "Quiero saber")
+      let textToInsert = newTranscript;
+      if (lastInsertedRef.current && newTranscript.toLowerCase().startsWith(lastInsertedRef.current.toLowerCase())) {
+        textToInsert = newTranscript.slice(lastInsertedRef.current.length).trim();
+      }
+
+      if (!textToInsert) return;
+
+      lastInsertedRef.current = newTranscript;
+
+      const editor = quillRef.current?.getEditor();
+      if (editor) {
+        const selection = editor.getSelection();
+        const cursor = selection ? selection.index : editor.getLength() - 1;
+
+        // Espaciado inteligente: evitar pegar palabras si el cursor no tiene espacio previo
+        const currentText = editor.getText();
+        const prevChar = cursor > 0 ? currentText.charAt(cursor - 1) : '';
+        const needsLeadingSpace = prevChar && !/\s/.test(prevChar);
+
+        const formattedInsert = (needsLeadingSpace ? ' ' : '') + textToInsert + ' ';
+        editor.insertText(cursor, formattedInsert, 'user');
+        editor.setSelection(cursor + formattedInsert.length, 0);
       }
     };
 
     recognition.onerror = (event: any) => {
       console.error("Speech recognition error", event.error);
       if (event.error === 'not-allowed' || event.error === 'permission-denied') {
-        alert("Acceso denegado al micrófono. Verifique los permisos o use una conexión segura (HTTPS). En móviles, el acceso suele bloquearse en HTTP.");
+        alert("Acceso denegado al micrófono. Verifique los permisos en el navegador.");
+        isListeningRef.current = false;
+        setIsListening(false);
+      } else if (event.error === 'no-speech') {
+        // Silencio temporal, no cancelar
       } else {
-        alert("Error en el reconocimiento de voz: " + event.error);
+        isListeningRef.current = false;
+        setIsListening(false);
       }
-      setIsListening(false);
     };
 
     recognition.onend = () => {
-      if (isListening) setIsListening(false);
+      // Si el usuario no presionó detener y el navegador finalizó por pausa o silencio, reanudar
+      if (isListeningRef.current) {
+        try {
+          lastInsertedRef.current = '';
+          recognition.start();
+        } catch (e) {
+          setIsListening(false);
+          isListeningRef.current = false;
+        }
+      } else {
+        setIsListening(false);
+      }
     };
 
-    recognition.start();
+    try {
+      recognition.start();
+    } catch (e) {
+      console.warn("Speech recognition start error:", e);
+    }
   };
 
   // Auto-save logic
