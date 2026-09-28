@@ -145,11 +145,31 @@ class OfflineDatabase {
     const db = await this.getDB();
     const tx = db.transaction('files', 'readwrite');
     const store = tx.objectStore('files');
-    for (const file of files) {
-      const doc = { ...file, project: (file as any).project || projectId };
-      store.put(doc);
-    }
+    const index = store.index('project');
+    const getKeysReq = index.getAllKeys(projectId);
+
     return new Promise((resolve, reject) => {
+      getKeysReq.onsuccess = () => {
+        const existingKeys = getKeysReq.result || [];
+        const incomingIds = new Set(files.map(f => f._id));
+        for (const key of existingKeys) {
+          const keyStr = String(key);
+          // Eliminar de IndexedDB los archivos que ya no existan en el servidor (salvo temporales offline no sincronizados aún)
+          if (!incomingIds.has(keyStr) && !keyStr.startsWith('temp_')) {
+            store.delete(key);
+          }
+        }
+        for (const file of files) {
+          const doc = { ...file, project: (file as any).project || projectId };
+          store.put(doc);
+        }
+      };
+      getKeysReq.onerror = () => {
+        for (const file of files) {
+          const doc = { ...file, project: (file as any).project || projectId };
+          store.put(doc);
+        }
+      };
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });

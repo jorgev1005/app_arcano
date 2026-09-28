@@ -1,4 +1,4 @@
-const CACHE_NAME = 'arcano-pwa-v9';
+const CACHE_NAME = 'arcano-pwa-v10';
 
 // Archivos estáticos clave a pre-almacenar en caché al instalar
 const PRECACHE_ASSETS = [

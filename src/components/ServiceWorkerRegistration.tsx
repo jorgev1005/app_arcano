@@ -7,7 +7,7 @@ export default function ServiceWorkerRegistration() {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker
-          .register('/sw.js?v=9')
+          .register('/sw.js?v=10')
           .then((registration) => {
             console.log('Arcano Service Worker registrado con éxito:', registration.scope);
             registration.update();
