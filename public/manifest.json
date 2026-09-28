@@ -1,4 +1,5 @@
 {
+  "id": "/dashboard",
   "name": "Arcano - Estudio de Escritura",
   "short_name": "Arcano",
   "description": "Herramienta definitiva de escritura creativa y estructuración de historias.",
@@ -6,20 +7,32 @@
   "scope": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",
-  "theme_color": "#171717",
+  "theme_color": "#0f0f15",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/globe.svg",
+      "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/window.svg",
+      "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

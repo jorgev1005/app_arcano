@@ -30,7 +30,8 @@ export default function RootLayout({
     return (
         <html lang="es" suppressHydrationWarning>
             <head>
-                <link rel="apple-touch-icon" href="/globe.svg" />
+                <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+                <link rel="icon" type="image/png" href="/favicon.png" />
             </head>
             <body>
                 <ServiceWorkerRegistration />

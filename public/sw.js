@@ -1,4 +1,4 @@
-const CACHE_NAME = 'arcano-pwa-v6';
+const CACHE_NAME = 'arcano-pwa-v7';
 
 // Archivos estáticos clave a pre-almacenar en caché al instalar
 const PRECACHE_ASSETS = [
@@ -6,8 +6,12 @@ const PRECACHE_ASSETS = [
   '/dashboard',
   '/login',
   '/manifest.json',
-  '/globe.svg',
-  '/window.svg'
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icon-maskable-192.png',
+  '/icon-maskable-512.png',
+  '/apple-touch-icon.png',
+  '/favicon.png'
 ];
 
 self.addEventListener('install', (event) => {
