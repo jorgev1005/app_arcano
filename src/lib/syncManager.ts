@@ -15,7 +15,18 @@ class SyncManager {
       this.isOnlineState = navigator.onLine;
       window.addEventListener('online', () => this.handleOnline());
       window.addEventListener('offline', () => this.handleOffline());
-      this.refreshPendingCount();
+      this.refreshPendingCount().then(() => {
+        if (this.isOnlineState && this.pendingCount > 0) {
+          this.syncPending();
+        }
+      });
+
+      // Verificación periódica: si estamos online y hay pendientes, disparar sincronización automáticamente
+      setInterval(() => {
+        if (this.isOnlineState && !this.isSyncing && this.pendingCount > 0) {
+          this.syncPending();
+        }
+      }, 5000);
     }
   }
 
@@ -223,6 +234,8 @@ class SyncManager {
 
         if (success && mutation.id !== undefined) {
           await offlineDb.removeMutation(mutation.id);
+          this.pendingCount = Math.max(0, this.pendingCount - 1);
+          this.notify();
         }
       } catch (err) {
         console.warn(`[SyncManager] Error de red al sincronizar ${mutation.type}:`, err);

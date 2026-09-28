@@ -35,9 +35,11 @@ export default function OfflineIndicator() {
 
   if (state.status === 'syncing') {
     return (
-      <div 
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-medium"
-        title="Sincronizando cambios pendientes con el servidor..."
+      <button 
+        type="button"
+        onClick={() => syncManager.triggerSync()}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-medium cursor-pointer hover:bg-blue-500/20 active:scale-95 transition-all"
+        title="Sincronizando cambios pendientes con el servidor. Haz clic para forzar sincronización inmediata."
       >
         <RefreshCw size={13} className="text-blue-400 animate-spin shrink-0" />
         <span className="hidden xs:inline">Sincronizando...</span>
@@ -47,7 +49,7 @@ export default function OfflineIndicator() {
             {state.pendingCount}
           </span>
         )}
-      </div>
+      </button>
     );
   }
 
