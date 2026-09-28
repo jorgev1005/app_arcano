@@ -103,8 +103,39 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
     if (file && file._id !== lastFileIdRef.current) {
 
       // 1. Force Save previous file if unsaved
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
       if (lastFileIdRef.current && (saveStatusRef.current === 'unsaved' || saveStatusRef.current === 'saving')) {
-        // ...
+        const prevId = lastFileIdRef.current;
+        const prevContent = contentRef.current;
+        const prevWordCount = wordCountRef.current;
+        const prevAttachments = attachmentsRef.current;
+
+        offlineDb.getSingleFile(prevId).then(async (prevDoc) => {
+          if (prevDoc) {
+            const updated = { ...prevDoc, content: prevContent, wordCount: prevWordCount, attachments: prevAttachments };
+            await offlineDb.saveSingleFile(updated, projectId);
+            if (onSave) onSave(updated);
+
+            try {
+              await fetch(`/api/files/${prevId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: prevContent, wordCount: prevWordCount, attachments: prevAttachments })
+              });
+            } catch (err) {
+              await offlineDb.enqueueMutation({
+                type: 'update_file',
+                entityId: prevId,
+                projectId,
+                payload: { content: prevContent, wordCount: prevWordCount, attachments: prevAttachments }
+              });
+              syncManager.refreshPendingCount();
+            }
+          }
+        }).catch(e => console.warn('Error saving previous file:', e));
       }
 
       // Check for IndexedDB offline draft
@@ -290,10 +321,16 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
       };
 
       // 1. Guardado local inmediato en IndexedDB (cero latencia)
-      await offlineDb.saveSingleFile({
+      const updatedLocal = {
         ...file,
         ...payload
-      }, projectId);
+      };
+      await offlineDb.saveSingleFile(updatedLocal, projectId);
+      if (onSave) onSave(updatedLocal);
+
+      // Metas de palabras: actualizar interfaz de inmediato
+      const currentCount = wordCountRef.current;
+      const delta = currentCount - lastSavedWordCountRef.current;
 
       try {
         const res = await fetch(`/api/files/${file._id}`, {
@@ -305,11 +342,7 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
         if (res.ok) {
           const data = await res.json();
           setSaveStatus('saved');
-          if (onSave) onSave(data.file);
-
-          // GOAL TRACKING: Calculate Delta
-          const currentCount = wordCountRef.current;
-          const delta = currentCount - lastSavedWordCountRef.current;
+          if (onSave && data.file) onSave(data.file);
 
           if (delta !== 0 && projectId) {
             fetch(`/api/projects/${projectId}/goals`, {
@@ -340,6 +373,11 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
         });
         syncManager.refreshPendingCount();
         setSaveStatus('saved');
+        if (onSave) onSave(updatedLocal);
+        if (delta !== 0 && onStatsUpdate) {
+          onStatsUpdate(currentCount);
+          lastSavedWordCountRef.current = currentCount;
+        }
       }
     }
   };

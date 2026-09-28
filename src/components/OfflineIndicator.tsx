@@ -18,13 +18,14 @@ export default function OfflineIndicator() {
   if (state.status === 'offline') {
     return (
       <div 
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium animate-pulse"
-        title="Estás trabajando sin conexión. Todos tus cambios se guardan localmente en tu dispositivo y se sincronizarán al reconectarte."
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium cursor-help"
+        title="Estás trabajando sin conexión. Todos tus cambios se guardan localmente en tu dispositivo y se sincronizarán automáticamente al reconectarte."
       >
         <CloudOff size={14} className="text-amber-400 shrink-0" />
-        <span>Modo Offline</span>
+        <span className="hidden xs:inline">Modo Offline</span>
+        <span className="xs:hidden">Offline</span>
         {state.pendingCount > 0 && (
-          <span className="bg-amber-500/20 px-1.5 py-0.2 rounded-full text-[10px]">
+          <span className="bg-amber-500/20 px-1.5 py-0.2 rounded-full text-[10px] font-mono">
             {state.pendingCount}
           </span>
         )}
@@ -39,9 +40,10 @@ export default function OfflineIndicator() {
         title="Sincronizando cambios pendientes con el servidor..."
       >
         <RefreshCw size={13} className="text-blue-400 animate-spin shrink-0" />
-        <span>Sincronizando...</span>
+        <span className="hidden xs:inline">Sincronizando...</span>
+        <span className="xs:hidden">Sync...</span>
         {state.pendingCount > 0 && (
-          <span className="bg-blue-500/20 px-1.5 py-0.2 rounded-full text-[10px]">
+          <span className="bg-blue-500/20 px-1.5 py-0.2 rounded-full text-[10px] font-mono">
             {state.pendingCount}
           </span>
         )}
@@ -50,12 +52,13 @@ export default function OfflineIndicator() {
   }
 
   return (
-    <div 
-      className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-medium"
-      title="Conectado a la nube. Manuscrito sincronizado."
+    <button 
+      onClick={() => syncManager.triggerSync()}
+      className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-medium transition-colors cursor-pointer"
+      title="Conectado a la nube. Haz clic para forzar comprobación de sincronización."
     >
       <CheckCircle2 size={12} className="text-emerald-400" />
       <span>Sincronizado</span>
-    </div>
+    </button>
   );
 }

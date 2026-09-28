@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     }
 
     await dbConnect();
-    const { title, projectId, type, parent, isSystem, status } = await request.json();
+    const { _id, title, projectId, type, parent, isSystem, status, content } = await request.json();
 
     if (!projectId) {
       return Response.json({ error: 'Falta projectId' }, { status: 400 });
@@ -56,7 +56,13 @@ export async function POST(request: Request) {
     const lastFile = await File.findOne({ project: projectId }).sort({ order: -1 });
     const order = lastFile ? lastFile.order + 1 : 0;
 
-    const file = new File({ title, project: projectId, type, parent, order, isSystem, status });
+    const fileDoc: any = { title, project: projectId, type, parent, order, isSystem, status };
+    if (content !== undefined) fileDoc.content = content;
+    if (_id && /^[0-9a-fA-F]{24}$/.test(_id)) {
+      fileDoc._id = _id;
+    }
+
+    const file = new File(fileDoc);
     await file.save();
     return Response.json({ file });
   } catch (error) {

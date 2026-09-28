@@ -17,7 +17,7 @@ import WelcomeScreen from '@/components/WelcomeScreen';
 import GraphView from '@/components/GraphView';
 import PacingGraph from '@/components/PacingGraph';
 import { Project, FileNode } from '@/types/models';
-import { offlineDb } from '@/lib/offlineDb';
+import { offlineDb, generateObjectId } from '@/lib/offlineDb';
 import { syncManager } from '@/lib/syncManager';
 import OfflineIndicator from '@/components/OfflineIndicator';
 import {
@@ -33,6 +33,7 @@ const Editor = dynamic(() => import('@/components/Editor'), { ssr: false });
 
 export default function Dashboard() {
     const { data: session } = useSession();
+    const [offlineUser, setOfflineUser] = useState<any>(null);
     const [projects, setProjects] = useState<Project[]>([]);
     const [currentProject, setCurrentProject] = useState<Project | null>(null);
     const [files, setFiles] = useState<FileNode[]>([]);
@@ -46,7 +47,35 @@ export default function Dashboard() {
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false); // New State
     const [isZenMode, setIsZenMode] = useState(false); // Zen Mode State
 
+    // Persistencia de sesión de usuario para visualización offline
     useEffect(() => {
+        if (session?.user) {
+            localStorage.setItem('arcano_offline_user', JSON.stringify(session.user));
+            setOfflineUser(session.user);
+        } else {
+            const savedUser = localStorage.getItem('arcano_offline_user');
+            if (savedUser) {
+                try {
+                    setOfflineUser(JSON.parse(savedUser));
+                } catch (e) {}
+            }
+        }
+    }, [session]);
+
+    useEffect(() => {
+        // 1. Carga inmediata de proyectos desde IndexedDB (0ms latencia)
+        offlineDb.getProjects().then((cached) => {
+            if (cached && cached.length > 0) {
+                setProjects(cached);
+                const lastProjectId = localStorage.getItem('arcano_last_project');
+                const targetProject = cached.find(p => p._id === lastProjectId);
+                if (targetProject) {
+                    selectProject(targetProject);
+                }
+            }
+        });
+
+        // 2. Refresco en línea
         fetchProjects();
 
         // Auto-open sidebar on mobile/tablet for better accessibility
@@ -55,14 +84,15 @@ export default function Dashboard() {
             setIsSidebarOpen(true);
         }
 
-        // 2. Restore Project Session (Delay slightly to ensure auth loaded if needed, but here is fine)
-        const lastProjectId = localStorage.getItem('arcano_last_project');
-        if (lastProjectId) {
-            // Logic handled in fetchProjects or separate effect dependent on projects
-        }
+        // Escuchar eventos de sincronización para actualizar la interfaz
+        const handleSyncEvent = () => {
+            fetchProjects();
+        };
+        window.addEventListener('arcano_synced', handleSyncEvent);
+        return () => window.removeEventListener('arcano_synced', handleSyncEvent);
     }, []);
 
-    // Restore Project once projects are loaded
+    // Restore Project once projects are loaded if none active
     useEffect(() => {
         if (projects.length > 0 && !currentProject) {
             const lastProjectId = localStorage.getItem('arcano_last_project');
@@ -71,7 +101,7 @@ export default function Dashboard() {
                 selectProject(targetProject);
             }
         }
-    }, [projects]); // Run when projects load
+    }, [projects]);
 
     const fetchProjects = async () => {
         try {
@@ -81,6 +111,20 @@ export default function Dashboard() {
             setProjects(data.projects);
             // Respaldar en IndexedDB para disponibilidad sin conexión
             await offlineDb.saveProjects(data.projects);
+
+            // PRE-CACHE EN SEGUNDO PLANO DE TODOS LOS ARCHIVOS DE TODOS LOS PROYECTOS:
+            // Asegura que todas las escenas y carpetas estén disponibles offline, incluso
+            // si el usuario no ha entrado a ese proyecto todavía en este dispositivo.
+            for (const proj of data.projects) {
+                fetch(`/api/files?projectId=${proj._id}`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(fileData => {
+                        if (fileData?.files) {
+                            offlineDb.saveFiles(fileData.files, proj._id);
+                        }
+                    })
+                    .catch(() => null);
+            }
         } catch (error) {
             console.warn('Conexión con servidor fallida, cargando proyectos desde IndexedDB:', error);
             const cached = await offlineDb.getProjects();
@@ -91,9 +135,9 @@ export default function Dashboard() {
     };
 
     const createProject = async (title: string, description?: string, settings?: any, coverImage?: string) => {
-        const tempId = 'temp_proj_' + Date.now();
+        const newId = generateObjectId();
         const newProj: Project = {
-            _id: tempId,
+            _id: newId,
             title,
             description: description || '',
             settings,
@@ -106,27 +150,48 @@ export default function Dashboard() {
         selectProject(newProj);
         await offlineDb.saveSingleProject(newProj);
 
+        // Crear carpetas de sistema locales de inmediato en IndexedDB
+        const defaultExtras: FileNode = {
+            _id: generateObjectId(),
+            title: 'Extras',
+            type: 'folder',
+            parent: null,
+            isSystem: true,
+            order: 998
+        };
+        const defaultSandbox: FileNode = {
+            _id: generateObjectId(),
+            title: 'Sandbox',
+            type: 'folder',
+            parent: null,
+            isSystem: true,
+            order: 999
+        };
+        await offlineDb.saveFiles([defaultExtras, defaultSandbox], newId);
+        setFiles([defaultExtras, defaultSandbox]);
+
         try {
             const res = await fetch('/api/projects', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, description: description || '', settings, coverImage }),
+                body: JSON.stringify({ _id: newId, title, description: description || '', settings, coverImage }),
             });
 
             if (!res.ok) throw new Error('Error al crear proyecto');
 
             const data = await res.json();
-            setProjects(prev => prev.map(p => p._id === tempId ? data.project : p));
-            if (currentProject?._id === tempId) {
-                setCurrentProject(data.project);
+            if (data.project) {
+                setProjects(prev => prev.map(p => p._id === newId ? data.project : p));
+                if (currentProject?._id === newId) {
+                    setCurrentProject(data.project);
+                }
+                await offlineDb.saveSingleProject(data.project);
             }
-            await offlineDb.deleteProject(tempId);
-            await offlineDb.saveSingleProject(data.project);
         } catch (error) {
             console.warn('Modo Offline: Encolando creación de proyecto', error);
             await offlineDb.enqueueMutation({
                 type: 'create_project',
-                entityId: tempId,
+                entityId: newId,
                 payload: { title, description: description || '', settings, coverImage }
             });
             syncManager.refreshPendingCount();
@@ -228,7 +293,22 @@ export default function Dashboard() {
         setCurrentProject(project);
         localStorage.setItem('arcano_last_project', project._id); // Save Session
 
-        let filesList: FileNode[] = [];
+        // 1. Cargar archivos desde IndexedDB inmediatamente (0ms latencia)
+        const cachedFiles = await offlineDb.getFilesByProject(project._id);
+        if (cachedFiles && cachedFiles.length > 0) {
+            setFiles(cachedFiles);
+            const lastFileId = localStorage.getItem(`arcano_last_file_${project._id}`);
+            if (lastFileId) {
+                const storedFile = cachedFiles.find(f => f._id === lastFileId);
+                if (storedFile) {
+                    setCurrentFile(storedFile);
+                    if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                }
+            }
+        }
+
+        // 2. Si hay conexión, refrescar en segundo plano con el servidor
+        let filesList: FileNode[] = cachedFiles || [];
         try {
             const res = await fetch(`/api/files?projectId=${project._id}`);
             if (res.ok) {
@@ -236,19 +316,19 @@ export default function Dashboard() {
                 filesList = data.files;
                 // Guardar en IndexedDB para disponibilidad offline
                 await offlineDb.saveFiles(filesList, project._id);
-            } else {
-                throw new Error('Respuesta fallida del servidor');
+                setFiles(filesList);
+
+                // Restaurar o actualizar el archivo seleccionado actual
+                const lastFileId = localStorage.getItem(`arcano_last_file_${project._id}`);
+                if (lastFileId) {
+                    const storedFile = filesList.find(f => f._id === lastFileId);
+                    if (storedFile) {
+                        setCurrentFile(storedFile);
+                    }
+                }
             }
         } catch (e) {
-            console.warn('Modo Offline: Cargando archivos desde IndexedDB local', e);
-            filesList = await offlineDb.getFilesByProject(project._id);
-        }
-
-        // Restore Last File for this project
-        const lastFileId = localStorage.getItem(`arcano_last_file_${project._id}`);
-        let storedFile = null;
-        if (lastFileId) {
-            storedFile = filesList.find(f => f._id === lastFileId);
+            console.log('[Dashboard] Modo offline activo: utilizando archivos locales de IndexedDB');
         }
 
         // Check/Create "Extras" folder if connected
@@ -270,6 +350,7 @@ export default function Dashboard() {
                     const newData = await createRes.json();
                     filesList.push(newData.file);
                     await offlineDb.saveSingleFile(newData.file, project._id);
+                    setFiles([...filesList]);
                 }
             } catch (e) { console.error("Error creating Extras folder", e); }
         }
@@ -293,24 +374,22 @@ export default function Dashboard() {
                     const newData = await createRes.json();
                     filesList.push(newData.file);
                     await offlineDb.saveSingleFile(newData.file, project._id);
+                    setFiles([...filesList]);
                 }
             } catch (e) { console.error("Error creating Sandbox folder", e); }
         }
 
-        setFiles(filesList);
-
-        // If we restored a file, select it now (after setting files)
-        if (storedFile) {
-            setCurrentFile(storedFile);
-            if (window.innerWidth < 1024) {
-                setIsSidebarOpen(false);
-            }
-        } else {
-            setCurrentFile(null);
-            // En móvil, si no hay archivo abierto, abrir el Binder para que el usuario elija
-            if (window.innerWidth < 1024) {
+        if (filesList.length > 0 && !currentFile) {
+            const lastFileId = localStorage.getItem(`arcano_last_file_${project._id}`);
+            const stored = lastFileId ? filesList.find(f => f._id === lastFileId) : null;
+            if (stored) {
+                setCurrentFile(stored);
+                if (window.innerWidth < 1024) setIsSidebarOpen(false);
+            } else if (window.innerWidth < 1024) {
                 setIsSidebarOpen(true);
             }
+        } else if (window.innerWidth < 1024 && !currentFile) {
+            setIsSidebarOpen(true);
         }
         setView('editor');
     };
@@ -321,9 +400,9 @@ export default function Dashboard() {
             return;
         }
 
-        const tempId = 'temp_file_' + Date.now();
+        const newId = generateObjectId();
         const newFileDoc: FileNode = {
-            _id: tempId,
+            _id: newId,
             title,
             type: type as any,
             parent: parentId,
@@ -351,6 +430,7 @@ export default function Dashboard() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    _id: newId,
                     title,
                     projectId: currentProject._id,
                     type,
@@ -361,18 +441,19 @@ export default function Dashboard() {
             if (!res.ok) throw new Error('Error al crear archivo');
 
             const data = await res.json();
-            setFiles(prev => prev.map(f => f._id === tempId ? data.file : f));
-            if (currentFile?._id === tempId) {
-                setCurrentFile(data.file);
+            if (data.file) {
+                setFiles(prev => prev.map(f => f._id === newId ? data.file : f));
+                if (currentFile?._id === newId) {
+                    setCurrentFile(data.file);
+                }
+                await offlineDb.saveSingleFile(data.file, currentProject._id);
+                return data.file;
             }
-            await offlineDb.deleteSingleFile(tempId);
-            await offlineDb.saveSingleFile(data.file, currentProject._id);
-            return data.file;
         } catch (error) {
             console.warn('Modo Offline: Creación de archivo encolada', error);
             await offlineDb.enqueueMutation({
                 type: 'create_file',
-                entityId: tempId,
+                entityId: newId,
                 projectId: currentProject._id,
                 payload: {
                     title,
@@ -387,9 +468,6 @@ export default function Dashboard() {
     };
 
     const updateFile = async (fileId: string, updates: any) => {
-        const previousFiles = files;
-        const previousCurrentFile = currentFile;
-
         const updatedFiles = files.map(f => f._id === fileId ? { ...f, ...updates } : f);
         setFiles(updatedFiles);
         if (currentFile?._id === fileId) {
@@ -487,13 +565,11 @@ export default function Dashboard() {
                 onSelectProject={selectProject}
                 onCreateProject={createProject}
                 onDeleteProject={deleteProject}
+                user={session?.user || offlineUser}
             />
         );
     }
 
-    // Also show welcome if projects exist but none selected? 
-    // Usually fetchProjects selects default. If explicit close, maybe show welcome?
-    // For now, if no currentProject, show welcome (it handles list).
     if (!currentProject) {
         return (
             <WelcomeScreen
@@ -502,7 +578,7 @@ export default function Dashboard() {
                 onCreateProject={createProject}
                 onDeleteProject={deleteProject}
                 onUpdateProject={updateProject}
-                user={session?.user}
+                user={session?.user || offlineUser}
             />
         );
     }
@@ -869,6 +945,7 @@ export default function Dashboard() {
                         onSave={handleFileSave}
                         allFiles={files}
                         projectSettings={currentProject?.settings}
+                        projectId={currentProject?._id}
                         onClose={() => setIsInspectorOpen(false)}
                     />
                 </div>

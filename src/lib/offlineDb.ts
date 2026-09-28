@@ -12,6 +12,22 @@ export interface SyncMutation {
   timestamp: number;
 }
 
+/**
+ * Genera un ObjectId hexadecimal de 24 caracteres compatible con MongoDB.
+ * Permite que los archivos y proyectos creados sin conexión tengan un identificador definitivo y unívoco.
+ */
+export function generateObjectId(): string {
+  const timestamp = Math.floor(Date.now() / 1000).toString(16).padStart(8, '0');
+  const randomBytes = new Uint8Array(8);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(randomBytes);
+  } else {
+    for (let i = 0; i < 8; i++) randomBytes[i] = Math.floor(Math.random() * 256);
+  }
+  const random = Array.from(randomBytes, b => b.toString(16).padStart(2, '0')).join('');
+  return (timestamp + random).toLowerCase();
+}
+
 class OfflineDatabase {
   private dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -130,7 +146,6 @@ class OfflineDatabase {
     const tx = db.transaction('files', 'readwrite');
     const store = tx.objectStore('files');
     for (const file of files) {
-      // Asegurar que el campo project esté asignado para el índice
       const doc = { ...file, project: (file as any).project || projectId };
       store.put(doc);
     }
@@ -164,6 +179,17 @@ class OfflineDatabase {
         results.sort((a, b) => (a.order || 0) - (b.order || 0));
         resolve(results);
       };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async getAllFiles(): Promise<FileNode[]> {
+    if (!this.isAvailable()) return [];
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('files', 'readonly');
+      const request = tx.objectStore('files').getAll();
+      request.onsuccess = () => resolve(request.result || []);
       request.onerror = () => reject(request.error);
     });
   }
@@ -229,6 +255,27 @@ class OfflineDatabase {
     });
   }
 
+  async updateMutationEntityId(oldId: string, newId: string): Promise<void> {
+    if (!this.isAvailable()) return;
+    const db = await this.getDB();
+    const tx = db.transaction('syncQueue', 'readwrite');
+    const store = tx.objectStore('syncQueue');
+    const request = store.getAll();
+    request.onsuccess = () => {
+      const mutations: SyncMutation[] = request.result || [];
+      for (const m of mutations) {
+        if (m.entityId === oldId) {
+          m.entityId = newId;
+          store.put(m);
+        }
+      }
+    };
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
   async getPendingCount(): Promise<number> {
     if (!this.isAvailable()) return 0;
     const db = await this.getDB();
@@ -236,6 +283,29 @@ class OfflineDatabase {
       const tx = db.transaction('syncQueue', 'readonly');
       const request = tx.objectStore('syncQueue').count();
       request.onsuccess = () => resolve(request.result || 0);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // --- METADATOS DE APP ---
+  async saveMeta(key: string, value: any): Promise<void> {
+    if (!this.isAvailable()) return;
+    const db = await this.getDB();
+    const tx = db.transaction('appMeta', 'readwrite');
+    tx.objectStore('appMeta').put({ key, value, updatedAt: Date.now() });
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async getMeta(key: string): Promise<any> {
+    if (!this.isAvailable()) return null;
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('appMeta', 'readonly');
+      const request = tx.objectStore('appMeta').get(key);
+      request.onsuccess = () => resolve(request.result ? request.result.value : null);
       request.onerror = () => reject(request.error);
     });
   }

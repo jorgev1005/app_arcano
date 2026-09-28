@@ -27,14 +27,18 @@ export async function POST(request: Request) {
     }
 
     await dbConnect();
-    const { title, description, settings, coverImage } = await request.json();
-    const project = new Project({
+    const { _id, title, description, settings, coverImage } = await request.json();
+    const projectData: any = {
       title,
       user: session.user.id,
       description,
       settings,
       coverImage
-    });
+    };
+    if (_id && /^[0-9a-fA-F]{24}$/.test(_id)) {
+      projectData._id = _id;
+    }
+    const project = new Project(projectData);
     await project.save();
 
     // Crear carpetas de sistema por defecto para el proyecto

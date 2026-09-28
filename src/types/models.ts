@@ -39,6 +39,7 @@ export type FileNode = {
   order?: number;
   metadata?: Record<string, string>;
   parent?: string | null;
+  project?: string;
   wordCount?: number;
   sceneData?: {
     goal?: string;

@@ -5,6 +5,8 @@ import { FileNode } from '@/types/models';
 import { Sparkles, Save, X, Clock, BarChart3, Activity, HelpCircle } from 'lucide-react';
 import { calculateSmartPace } from '@/lib/narrative-engine';
 import NarrativeHelpModal from './NarrativeHelpModal';
+import { offlineDb } from '@/lib/offlineDb';
+import { syncManager } from '@/lib/syncManager';
 
 // Time Data Interface
 interface TimeData {
@@ -440,6 +442,7 @@ interface InspectorProps {
   file: FileNode | null;
   onSave: (file: FileNode) => void;
   onClose?: () => void;
+  projectId?: string;
 }
 
 export default function Inspector({
@@ -447,10 +450,12 @@ export default function Inspector({
   onSave,
   allFiles = [],
   projectSettings,
+  projectId,
   onClose
 }: InspectorProps & {
   allFiles?: FileNode[],
-  projectSettings?: { genre?: string }
+  projectSettings?: { genre?: string },
+  projectId?: string
 }) {
   const [synopsis, setSynopsis] = useState('');
   const [status, setStatus] = useState('draft');
@@ -490,6 +495,16 @@ export default function Inspector({
       metrics: narrativeMetrics
     };
 
+    const updatedDoc = { ...file, ...updates };
+    const targetProjectId = projectId || file.project;
+
+    // 1. Notificar actualización inmediata en la interfaz
+    if (onSave) onSave(updatedDoc);
+
+    // 2. Guardar en IndexedDB de inmediato
+    await offlineDb.saveSingleFile(updatedDoc, targetProjectId);
+
+    // 3. Si hay red, sincronizar en el servidor; si no, encolar en Outbox
     try {
       const res = await fetch(`/api/files/${file._id}`, {
         method: 'PUT',
@@ -497,15 +512,16 @@ export default function Inspector({
         body: JSON.stringify(updates),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (onSave) onSave(data.file);
-      } else {
-        throw new Error('Falló el guardado');
-      }
+      if (!res.ok) throw new Error('Falló el guardado en servidor');
     } catch (error) {
-      console.error('Error saving metadata:', error);
-      alert('Error al guardar los cambios');
+      console.warn('Modo Offline: Metadatos del Inspector guardados localmente. Encolando sincronización.', error);
+      await offlineDb.enqueueMutation({
+        type: 'update_file',
+        entityId: file._id,
+        projectId: targetProjectId,
+        payload: updates
+      });
+      syncManager.refreshPendingCount();
     }
   };
 

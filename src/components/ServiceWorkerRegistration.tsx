@@ -7,22 +7,17 @@ export default function ServiceWorkerRegistration() {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker
-          .register('/sw.js?v=4')
+          .register('/sw.js?v=6')
           .then((registration) => {
             console.log('Arcano Service Worker registrado con éxito:', registration.scope);
-            // Chequear actualización forzada
             registration.update();
           })
           .catch((error) => {
             console.warn('Fallo al registrar Service Worker:', error);
           });
 
-        let refreshing = false;
         navigator.serviceWorker.addEventListener('controllerchange', () => {
-          if (!refreshing) {
-            refreshing = true;
-            window.location.reload();
-          }
+          console.log('[SW Arcano] Nueva versión del Service Worker activada.');
         });
       });
     }
