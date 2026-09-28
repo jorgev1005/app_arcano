@@ -108,11 +108,29 @@ class SyncManager {
             const res = await fetch(`/api/files/${mutation.entityId}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(mutation.payload)
+              body: JSON.stringify({
+                projectId: mutation.projectId,
+                ...mutation.payload
+              })
             });
-            // 200/OK o 404 (si ya no existe en el servidor se descarta la mutación)
-            success = res.ok || res.status === 404;
-            if (res.ok) didMakeChanges = true;
+
+            if (res.ok) {
+              const data = await res.json();
+              if (data.rescuedFromTemp && data.file) {
+                await offlineDb.deleteSingleFile(data.rescuedFromTemp);
+                await offlineDb.saveSingleFile(data.file, mutation.projectId);
+                await offlineDb.updateMutationEntityId(data.rescuedFromTemp, data.file._id);
+              }
+              success = true;
+              didMakeChanges = true;
+            } else if (res.status === 404) {
+              // Ya no existe en el servidor, descartar mutación para desbloquear cola
+              success = true;
+            } else if (res.status >= 400 && res.status < 500) {
+              // Petición rechazada por cliente/validación: descartar para evitar bloqueo permanente
+              console.warn(`[SyncManager] Mutación update_file descartada por código HTTP ${res.status}`);
+              success = true;
+            }
             break;
           }
 
@@ -128,7 +146,6 @@ class SyncManager {
             if (res.ok) {
               const data = await res.json();
               if (data.file) {
-                // Si el servidor asignó un ID distinto al temporal
                 if (data.file._id !== mutation.entityId) {
                   await offlineDb.deleteSingleFile(mutation.entityId);
                   await offlineDb.saveSingleFile(data.file, mutation.projectId);
@@ -139,6 +156,9 @@ class SyncManager {
               }
               success = true;
               didMakeChanges = true;
+            } else if (res.status >= 400 && res.status < 500) {
+              console.warn(`[SyncManager] Mutación create_file descartada por código HTTP ${res.status}`);
+              success = true;
             }
             break;
           }
@@ -147,8 +167,8 @@ class SyncManager {
             const res = await fetch(`/api/files/${mutation.entityId}`, {
               method: 'DELETE'
             });
-            success = res.ok || res.status === 404;
-            if (success) didMakeChanges = true;
+            success = res.ok || res.status === 404 || (res.status >= 400 && res.status < 500);
+            if (res.ok) didMakeChanges = true;
             break;
           }
 
@@ -158,7 +178,7 @@ class SyncManager {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(mutation.payload)
             });
-            success = res.ok || res.status === 404;
+            success = res.ok || res.status === 404 || (res.status >= 400 && res.status < 500);
             if (res.ok) didMakeChanges = true;
             break;
           }
@@ -185,6 +205,8 @@ class SyncManager {
               }
               success = true;
               didMakeChanges = true;
+            } else if (res.status >= 400 && res.status < 500) {
+              success = true;
             }
             break;
           }
@@ -193,8 +215,8 @@ class SyncManager {
             const res = await fetch(`/api/projects/${mutation.entityId}`, {
               method: 'DELETE'
             });
-            success = res.ok || res.status === 404;
-            if (success) didMakeChanges = true;
+            success = res.ok || res.status === 404 || (res.status >= 400 && res.status < 500);
+            if (res.ok) didMakeChanges = true;
             break;
           }
         }
@@ -204,7 +226,7 @@ class SyncManager {
         }
       } catch (err) {
         console.warn(`[SyncManager] Error de red al sincronizar ${mutation.type}:`, err);
-        // Interrumpir el lote si falló la red para reanudar luego
+        // Interrumpir el lote solo si es un error de conectividad real para reanudar al tener internet
         break;
       }
     }
