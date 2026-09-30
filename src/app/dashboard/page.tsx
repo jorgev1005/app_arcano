@@ -47,11 +47,24 @@ export default function Dashboard() {
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false); // New State
     const [isZenMode, setIsZenMode] = useState(false); // Zen Mode State
 
-    // Persistencia de sesión de usuario para visualización offline
+    // Persistencia de sesión de usuario y precaché del Dashboard para visualización offline
     useEffect(() => {
         if (session?.user) {
             localStorage.setItem('arcano_offline_user', JSON.stringify(session.user));
             setOfflineUser(session.user);
+
+            // Pre-almacenar en caché el HTML del dashboard con credenciales válidas para arranque offline
+            if (typeof window !== 'undefined' && 'caches' in window) {
+                fetch('/dashboard', { credentials: 'include' })
+                    .then(async (res) => {
+                        if (res && res.status === 200) {
+                            const cache = await caches.open('arcano-pwa-v11');
+                            await cache.put('/dashboard', res.clone());
+                            await cache.put(window.location.href, res);
+                        }
+                    })
+                    .catch(() => {});
+            }
         } else {
             const savedUser = localStorage.getItem('arcano_offline_user');
             if (savedUser) {
