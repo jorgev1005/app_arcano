@@ -85,6 +85,20 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
   const isListeningRef = useRef(false);
   const recognitionRef = useRef<any>(null);
   const lastInsertedRef = useRef<string>('');
+  const lastInsertedTimeRef = useRef<number>(0);
+
+  // Limpiar recursos de reconocimiento de voz al desmontar el componente
+  useEffect(() => {
+    return () => {
+      isListeningRef.current = false;
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {}
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
 
   // Sync refs with state
   useEffect(() => { contentRef.current = content; }, [content]);
@@ -187,34 +201,34 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
     setAttachments(newAttachments);
   };
 
-  const toggleSpeech = () => {
-    if (isListening) {
-      isListeningRef.current = false;
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
-      }
+  const startRecognition = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert("Tu navegador no soporta el reconocimiento de voz. Prueba con Chrome o Edge.");
       setIsListening(false);
-      lastInsertedRef.current = '';
+      isListeningRef.current = false;
       return;
     }
 
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert("Tu navegador no soporta el reconocimiento de voz. Prueba con Chrome o Edge.");
-      return;
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {}
+      recognitionRef.current = null;
     }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
 
-    recognition.continuous = true;
-    recognition.interimResults = false; // Solo resultados finales consolidados para evitar duplicaciones
-    recognition.lang = 'es-ES';
+    const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-    lastInsertedRef.current = '';
-    isListeningRef.current = true;
+    // En móviles (Android Chrome), 'continuous = true' causa que el servicio de voz de Google acumule
+    // todas las frases habladas en el historial del evento y reinicie resultIndex en 0, multiplicando
+    // el texto en bucle. En móvil 'continuous = false' produce exactamente 1 resultado limpio por frase,
+    // y 'onend' se encarga de reanudar la escucha de la siguiente frase de forma transparente.
+    recognition.continuous = !isMobile;
+    recognition.interimResults = false;
+    recognition.lang = 'es-ES';
 
     recognition.onstart = () => {
       setIsListening(true);
@@ -222,30 +236,48 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
     };
 
     recognition.onresult = (event: any) => {
-      let rawTranscript = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          rawTranscript += event.results[i][0].transcript;
+      let newTranscript = '';
+
+      if (isMobile) {
+        const lastResult = event.results[event.results.length - 1];
+        if (lastResult && lastResult.isFinal) {
+          newTranscript = lastResult[0]?.transcript || '';
+        }
+      } else {
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            newTranscript += event.results[i][0].transcript;
+          }
         }
       }
 
-      let newTranscript = rawTranscript.trim();
+      newTranscript = newTranscript.trim();
       if (!newTranscript) return;
 
-      // 1. Si la frase es exactamente idéntica a la anterior (bug recurrente de Android Chrome), omitir
-      if (newTranscript.toLowerCase() === lastInsertedRef.current.toLowerCase()) {
+      const now = Date.now();
+
+      // 1. Descartar si es exactamente idéntico al último texto insertado hace menos de 2 segundos (debounce de eventos dobles en Android)
+      if (
+        newTranscript.toLowerCase() === lastInsertedRef.current.toLowerCase() &&
+        now - lastInsertedTimeRef.current < 2000
+      ) {
         return;
       }
 
-      // 2. Si en Android el reconocimiento devuelve texto acumulativo ("Quiero", luego "Quiero saber")
+      // 2. Si el motor envía texto acumulativo que contiene la frase previa (ej. "Hola", luego "Hola amigos")
       let textToInsert = newTranscript;
-      if (lastInsertedRef.current && newTranscript.toLowerCase().startsWith(lastInsertedRef.current.toLowerCase())) {
+      if (
+        lastInsertedRef.current &&
+        now - lastInsertedTimeRef.current < 3000 &&
+        newTranscript.toLowerCase().startsWith(lastInsertedRef.current.toLowerCase())
+      ) {
         textToInsert = newTranscript.slice(lastInsertedRef.current.length).trim();
       }
 
       if (!textToInsert) return;
 
       lastInsertedRef.current = newTranscript;
+      lastInsertedTimeRef.current = now;
 
       const editor = quillRef.current?.getEditor();
       if (editor) {
@@ -264,29 +296,29 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
     };
 
     recognition.onerror = (event: any) => {
-      console.error("Speech recognition error", event.error);
+      console.warn("Speech recognition error:", event.error);
       if (event.error === 'not-allowed' || event.error === 'permission-denied') {
         alert("Acceso denegado al micrófono. Verifique los permisos en el navegador.");
         isListeningRef.current = false;
         setIsListening(false);
+      } else if (event.error === 'aborted') {
+        // Detenido por el usuario
       } else if (event.error === 'no-speech') {
-        // Silencio temporal, no cancelar
-      } else {
-        isListeningRef.current = false;
-        setIsListening(false);
+        // Silencio temporal
       }
     };
 
     recognition.onend = () => {
-      // Si el usuario no presionó detener y el navegador finalizó por pausa o silencio, reanudar
       if (isListeningRef.current) {
-        try {
-          lastInsertedRef.current = '';
-          recognition.start();
-        } catch (e) {
-          setIsListening(false);
-          isListeningRef.current = false;
-        }
+        setTimeout(() => {
+          if (isListeningRef.current) {
+            try {
+              startRecognition();
+            } catch (e) {
+              console.error("Error al reiniciar reconocimiento:", e);
+            }
+          }
+        }, 150);
       } else {
         setIsListening(false);
       }
@@ -297,6 +329,28 @@ export default function Editor({ file, onSave, variables = [], projectId, onStat
     } catch (e) {
       console.warn("Speech recognition start error:", e);
     }
+  };
+
+  const toggleSpeech = () => {
+    if (isListeningRef.current) {
+      isListeningRef.current = false;
+      setIsListening(false);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {}
+        recognitionRef.current = null;
+      }
+      lastInsertedRef.current = '';
+      lastInsertedTimeRef.current = 0;
+      return;
+    }
+
+    isListeningRef.current = true;
+    setIsListening(true);
+    lastInsertedRef.current = '';
+    lastInsertedTimeRef.current = 0;
+    startRecognition();
   };
 
   // Auto-save logic
